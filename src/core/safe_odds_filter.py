@@ -1,0 +1,182 @@
+"""
+Safe Odds Filter (1.03-1.10)
+Filters matches by risk level and league stability
+"""
+from typing import Dict, List, Optional
+from src.core.worst_case_simulator import WorstCaseSimulator
+
+
+class SafeOddsFilter:
+    """Filters matches for ultra-safe picks in 1.03-1.10 range"""
+    
+    # High stability leagues
+    STABLE_LEAGUES = [
+        'EPL', 'LaLiga', 'Bundesliga', 
+        'SerieA', 'Ligue1', 'Eredivisie'
+    ]
+    
+    # Excluded match types
+    EXCLUDED_TYPES = [
+        'cup', 'friendly', 'youth', 
+        'reserve', 'international_friendly'
+    ]
+    
+    def __init__(self, min_odds: float = 1.03, max_odds: float = 1.10):
+        self.min_odds = min_odds
+        self.max_odds = max_odds
+        self.simulator = WorstCaseSimulator()
+    
+    def filter_match(self, match_data: Dict) -> bool:
+        """
+        Check if match passes safety filters
+        
+        Returns:
+            True if match is safe, False otherwise
+        """
+        # 1. Check league stability
+        league = match_data.get('league_tier', '').upper()
+        if league not in self.STABLE_LEAGUES:
+            return False
+        
+        # 2. Exclude cup games, friendlies, etc.
+        match_type = match_data.get('match_type', '').lower()
+        if any(excluded in match_type for excluded in self.EXCLUDED_TYPES):
+            return False
+        
+        # 3. Check team stability (low variance stats)
+        home_form = match_data.get('home_form', {})
+        away_form = match_data.get('away_form', {})
+        
+        # Both teams should have consistent scoring
+        home_goals_variance = home_form.get('goals_variance', 100)
+        away_goals_variance = away_form.get('goals_variance', 100)
+        
+        # Low variance = more predictable
+        if home_goals_variance > 10 or away_goals_variance > 10:
+            return False
+        
+        # 4. Exclude high-pressure desperation games
+        pressure_index = match_data.get('pressure_index', 0.5)
+        if pressure_index > 0.8:  # Too much pressure = volatility
+            return False
+        
+        # 5. Check if teams are in relegation zone (too desperate)
+        home_position = match_data.get('home_position', 10)
+        away_position = match_data.get('away_position', 10)
+        league_size = match_data.get('league_size', 20)
+        
+        # Teams in bottom 3 are too desperate
+        if home_position > league_size - 2 or away_position > league_size - 2:
+            return False
+        
+        # 6. Check fixture congestion (tired teams = unpredictable)
+        home_congestion = match_data.get('home_fixture_congestion', 7)
+        away_congestion = match_data.get('away_fixture_congestion', 7)
+        
+        if home_congestion < 2 or away_congestion < 2:  # Very tired
+            return False
+        
+        # 7. Exclude derby matches (too volatile)
+        if match_data.get('is_derby', False):
+            return False
+        
+        # 8. Check star player availability
+        if match_data.get('key_player_missing', False):
+            return False
+        
+        # All checks passed
+        return True
+    
+    def filter_predictions(
+        self, 
+        matches: List[Dict], 
+        predictions: List[Dict]
+    ) -> List[Dict]:
+        """
+        Filter predictions to keep only safest picks
+        
+        Args:
+            matches: List of match dictionaries
+            predictions: List of prediction dictionaries with market, odds, confidence
+        
+        Returns:
+            Filtered list of predictions
+        """
+        filtered = []
+        
+        for pred in predictions:
+            match_id = pred.get('match_id')
+            match_data = next((m for m in matches if m.get('id') == match_id), None)
+            
+            if not match_data:
+                continue
+            
+            # 1. Check if match passes basic filters
+            if not self.filter_match(match_data):
+                continue
+            
+            # 2. Check market is safe market type
+            market_type = pred.get('market_type', '')
+            if not self.simulator.is_safe_market(market_type):
+                continue
+            
+            # 3. Check odds are in range
+            odds = pred.get('odds', 0)
+            if odds < self.min_odds or odds > self.max_odds:
+                continue
+            
+            # 4. Check worst-case scenario survival
+            base_prob = pred.get('confidence', 0)
+            worst_case_result = self.simulator.test_all_scenarios(
+                match_data, market_type, base_prob
+            )
+            
+            if not worst_case_result['survives_all']:
+                continue
+            
+            # 5. Check confidence threshold
+            if base_prob < 0.95:  # 95% minimum confidence
+                continue
+            
+            # Add to filtered list
+            filtered.append({
+                **pred,
+                'worst_case_result': worst_case_result,
+                'risk_score': 1.0 - worst_case_result['safety_score'],
+                'filter_reason': self._generate_filter_reason(
+                    match_data, worst_case_result
+                )
+            })
+        
+        # Sort by safety score (highest first = safest)
+        filtered.sort(
+            key=lambda x: x['worst_case_result']['safety_score'], 
+            reverse=True
+        )
+        
+        # Return top 3 safest
+        return filtered[:3]
+    
+    def _generate_filter_reason(
+        self, 
+        match_data: Dict, 
+        worst_case_result: Dict
+    ) -> str:
+        """Generate human-readable reason why match passed filter"""
+        reasons = []
+        
+        if worst_case_result['worst_case_probability'] >= 0.90:
+            reasons.append("Extremely high worst-case survival rate")
+        
+        if worst_case_result['safety_score'] >= 0.90:
+            reasons.append("Very high safety score")
+        
+        league = match_data.get('league_tier', '')
+        reasons.append(f"Stable league: {league}")
+        
+        home_team = match_data.get('home_team', '')
+        away_team = match_data.get('away_team', '')
+        reasons.append(f"Predictable teams: {home_team} vs {away_team}")
+        
+        return ". ".join(reasons) + "."
+

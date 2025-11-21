@@ -1,0 +1,172 @@
+{
+  "name": "Daily Safe Picks Workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 24
+            },
+            {
+              "field": "cronExpression",
+              "cronExpression": "0 10 * * *"
+            }
+          ]
+        }
+      },
+      "id": "daily-trigger",
+      "name": "Daily at 10 AM",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.API_URL || 'http://localhost:8000' }}/safe-picks/today",
+        "options": {}
+      },
+      "id": "fetch-picks",
+      "name": "Fetch Safe Picks",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "check-combo-odds",
+              "leftValue": "={{ $json.combo_odds }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "larger"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-results",
+      "name": "Check if Picks Found",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $env.TELEGRAM_CHAT_ID }}",
+        "text": "=🎯 Daily Safe Picks (1.03-1.10)\n\n" +
+                "Total Odds: {{ $json.combo_odds }}x\n" +
+                "Games Used: {{ $json.games_used }}\n" +
+                "Confidence: {{ $json.confidence * 100 }}%\n\n" +
+                "{{ $json.picks.map(p => `📊 ${p.match}\n` + `   Market: ${p.market}\n` + `   Odds: ${p.odds}x\n` + `   Confidence: ${(p.confidence * 100).toFixed(1)}%\n` + `   ✅ Worst-case Safe: ${p.worstCaseSafe}\n`).join('\n') }}\n\n" +
+                "Reason: {{ $json.reason }}\n\n" +
+                "👉 Review and approve at: {{ $env.ADMIN_URL || 'http://localhost:8000/admin' }}"
+      },
+      "id": "send-telegram",
+      "name": "Send to Telegram",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.1,
+      "position": [850, 200]
+    },
+    {
+      "parameters": {
+        "toEmail": "={{ $env.ADMIN_EMAIL }}",
+        "subject": "Daily Safe Picks - Review Required",
+        "emailType": "html",
+        "message": "=<!DOCTYPE html><html><body>" +
+                  "<h2>🎯 Daily Safe Picks (1.03-1.10)</h2>" +
+                  "<p><strong>Total Odds:</strong> {{ $json.combo_odds }}x</p>" +
+                  "<p><strong>Games Used:</strong> {{ $json.games_used }}</p>" +
+                  "<p><strong>Confidence:</strong> {{ $json.confidence * 100 }}%</p>" +
+                  "<h3>Picks:</h3>" +
+                  "<ul>{{ $json.picks.map(p => `<li><strong>${p.match}</strong><br>` + `Market: ${p.market}<br>` + `Odds: ${p.odds}x<br>` + `Confidence: ${(p.confidence * 100).toFixed(1)}%<br>` + `✅ Worst-case Safe: ${p.worstCaseSafe}</li>`).join('') }}</ul>" +
+                  "<p><strong>Reason:</strong> {{ $json.reason }}</p>" +
+                  "<p><a href='{{ $env.ADMIN_URL || 'http://localhost:8000/admin' }}'>Review and Approve</a></p>" +
+                  "</body></html>"
+      },
+      "id": "send-email",
+      "name": "Send Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [850, 400]
+    },
+    {
+      "parameters": {
+        "message": "=⚠️ No safe picks found today. Check system logs."
+      },
+      "id": "no-picks-notification",
+      "name": "No Picks Found",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.1,
+      "position": [850, 500]
+    }
+  ],
+  "connections": {
+    "Daily at 10 AM": {
+      "main": [
+        [
+          {
+            "node": "Fetch Safe Picks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Safe Picks": {
+      "main": [
+        [
+          {
+            "node": "Check if Picks Found",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check if Picks Found": {
+      "main": [
+        [
+          {
+            "node": "Send to Telegram",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Send Email",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "No Picks Found",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 1,
+  "updatedAt": "2025-01-16T00:00:00.000Z",
+  "versionId": "1"
+}
+

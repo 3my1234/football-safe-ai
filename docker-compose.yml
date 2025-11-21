@@ -1,0 +1,55 @@
+version: '3.8'
+
+services:
+  # PostgreSQL database (optional - use if not using existing Rolley database)
+  postgres:
+    image: postgres:15-alpine
+    container_name: football-ai-postgres
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-PHYSICS1234}
+      - POSTGRES_DB=football_ai
+    volumes:
+      - football_ai_postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"  # Different port to avoid conflict with main Rolley DB
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  football-ai:
+    build: .
+    container_name: football-safe-ai
+    ports:
+      - "8000:8000"
+    environment:
+      # Use PostgreSQL - either connect to existing Rolley DB or use container DB
+      # Option 1: Connect to existing Rolley PostgreSQL (recommended)
+      - FOOTBALL_AI_DATABASE_URL=${FOOTBALL_AI_DATABASE_URL:-postgresql://postgres:PHYSICS1234@host.docker.internal:5432/football_ai?schema=public}
+      # Option 2: Use containerized PostgreSQL (uncomment if using postgres service above)
+      # - FOOTBALL_AI_DATABASE_URL=postgresql://postgres:PHYSICS1234@postgres:5432/football_ai?schema=public
+      - API_FOOTBALL_KEY=${API_FOOTBALL_KEY}
+      - MIN_ODDS=1.03
+      - MAX_ODDS=1.10
+      - MODEL_PATH=./models/football_model.pkl
+    volumes:
+      - ./data:/app/data
+      - ./models:/app/models
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    extra_hosts:
+      - "host.docker.internal:host-gateway"  # For connecting to host PostgreSQL
+
+volumes:
+  football_ai_postgres_data:
+

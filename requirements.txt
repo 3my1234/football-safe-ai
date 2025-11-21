@@ -1,0 +1,33 @@
+# FastAPI & Server
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+pydantic==2.5.0
+pydantic-settings==2.1.0
+
+# Machine Learning
+xgboost>=2.0.3  # Primary ML library (has pre-built wheels for Windows)
+# scikit-learn>=1.4.0  # Optional - only needed if XGBoost unavailable (requires C++ build tools on Windows)
+pandas>=2.1.4
+numpy>=1.26.2
+joblib>=1.3.2
+
+# Database
+sqlalchemy==2.0.23
+psycopg2-binary==2.9.9  # PostgreSQL adapter
+asyncpg==0.29.0  # Async PostgreSQL (optional)
+
+# API & HTTP
+httpx==0.25.2
+requests==2.31.0
+
+# Data Processing
+python-dateutil==2.8.2
+pytz==2023.3
+
+# Logging
+python-json-logger==2.0.7
+
+# Testing
+pytest==7.4.3
+pytest-asyncio==0.21.1
+

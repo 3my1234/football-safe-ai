@@ -1,0 +1,32 @@
+# Coolify deployment configuration for Football Safe Odds AI
+# This file helps Coolify understand how to deploy the service
+
+name: football-safe-ai
+description: Football Safe Odds AI Prediction Service (FastAPI)
+
+# Build configuration
+build:
+  dockerfile: Dockerfile
+  context: .
+
+# Port configuration (Coolify will handle port mapping)
+ports:
+  - "8000:8000"
+
+# Health check
+healthcheck:
+  path: /health
+  interval: 30
+  timeout: 10
+  retries: 3
+
+# Environment variables (set these in Coolify UI)
+# Required:
+# - FOOTBALL_AI_DATABASE_URL (PostgreSQL connection string)
+# - API_FOOTBALL_KEY (for fetching match data)
+
+# Optional:
+# - MIN_ODDS=1.03
+# - MAX_ODDS=1.10
+# - MODEL_PATH=./models/football_model.pkl
+
