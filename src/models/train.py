@@ -50,8 +50,14 @@ class FootballPredictor:
     
     def __init__(self):
         self.model = None
-        self.scaler = StandardScaler()
+        # Only create scaler if sklearn is available
+        if SKLEARN_AVAILABLE:
+            self.scaler = StandardScaler()
+        else:
+            self.scaler = None  # Will use simple normalization instead
         self.feature_names = []
+        self._scaler_mean = None  # For simple normalization fallback
+        self._scaler_std = None
         
     def extract_features(self, match_data: Dict) -> np.ndarray:
         """Extract features from match data for ML model"""
@@ -170,7 +176,7 @@ class FootballPredictor:
         y = np.array(targets)
         
         # Split data
-        if SKLEARN_AVAILABLE:
+        if SKLEARN_AVAILABLE and self.scaler is not None:
             X_train, X_test, y_train, y_test = train_test_split(
                 X, y, test_size=0.2, random_state=42
             )
@@ -183,9 +189,11 @@ class FootballPredictor:
             split_idx = int(len(X) * 0.8)
             X_train, X_test = X[:split_idx], X[split_idx:]
             y_train, y_test = y[:split_idx], y[split_idx:]
-            # Simple normalization
-            X_train_scaled = (X_train - X_train.mean(axis=0)) / (X_train.std(axis=0) + 1e-8)
-            X_test_scaled = (X_test - X_train.mean(axis=0)) / (X_train.std(axis=0) + 1e-8)
+            # Simple normalization - store mean/std for later use
+            self._scaler_mean = X_train.mean(axis=0)
+            self._scaler_std = X_train.std(axis=0) + 1e-8
+            X_train_scaled = (X_train - self._scaler_mean) / self._scaler_std
+            X_test_scaled = (X_test - self._scaler_mean) / self._scaler_std
         
         # Train model
         if XGBOOST_AVAILABLE:
@@ -240,7 +248,14 @@ class FootballPredictor:
         
         # Save model
         joblib.dump(self.model, MODEL_PATH)
-        joblib.dump(self.scaler, SCALER_PATH)
+        if self.scaler is not None:
+            joblib.dump(self.scaler, SCALER_PATH)
+        else:
+            # Save simple scaler stats instead
+            joblib.dump({
+                'mean': self._scaler_mean,
+                'std': self._scaler_std
+            }, SCALER_PATH)
         
         with open(FEATURES_PATH, 'w') as f:
             json.dump(self.feature_names, f)
@@ -253,7 +268,16 @@ class FootballPredictor:
             self.load()
         
         features = self.extract_features(match_data)
-        features_scaled = self.scaler.transform(features)
+        
+        # Scale features
+        if self.scaler is not None:
+            features_scaled = self.scaler.transform(features)
+        elif self._scaler_mean is not None and self._scaler_std is not None:
+            # Use simple normalization
+            features_scaled = (features - self._scaler_mean) / self._scaler_std
+        else:
+            # No scaling available, use raw features
+            features_scaled = features
         
         # Get probability
         proba = self.model.predict_proba(features_scaled)[0]
@@ -265,10 +289,31 @@ class FootballPredictor:
         """Load trained model"""
         if MODEL_PATH.exists():
             self.model = joblib.load(MODEL_PATH)
-            self.scaler = joblib.load(SCALER_PATH)
             
-            with open(FEATURES_PATH, 'r') as f:
-                self.feature_names = json.load(f)
+            # Try to load scaler (may be StandardScaler or simple dict)
+            if SCALER_PATH.exists():
+                try:
+                    scaler_data = joblib.load(SCALER_PATH)
+                    if isinstance(scaler_data, dict) and 'mean' in scaler_data:
+                        # Simple scaler (no sklearn)
+                        self.scaler = None
+                        self._scaler_mean = scaler_data['mean']
+                        self._scaler_std = scaler_data['std']
+                    else:
+                        # StandardScaler object
+                        self.scaler = scaler_data
+                        self._scaler_mean = None
+                        self._scaler_std = None
+                except Exception as e:
+                    print(f"⚠️ Warning: Could not load scaler: {e}. Using raw features.")
+                    self.scaler = None
+                    self._scaler_mean = None
+                    self._scaler_std = None
+            
+            if FEATURES_PATH.exists():
+                with open(FEATURES_PATH, 'r') as f:
+                    self.feature_names = json.load(f)
+            
             print(f"✅ Model loaded from {MODEL_PATH}")
         else:
             raise FileNotFoundError(f"Model not found at {MODEL_PATH}. Train the model first.")

@@ -60,8 +60,9 @@ app.add_middleware(
 # Initialize services
 try:
     prediction_service = PredictionService(min_odds=1.03, max_odds=1.10)
-except FileNotFoundError:
-    print("⚠️ Model not found. Train the model first: python -m src.models.train")
+except (FileNotFoundError, NameError, ImportError) as e:
+    print(f"⚠️ Prediction service initialization warning: {e}")
+    print("   Service will use fallback predictions without ML model")
     prediction_service = None
 
 match_fetcher = MatchFetcher()
