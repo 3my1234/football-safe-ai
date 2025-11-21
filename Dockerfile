@@ -31,6 +31,11 @@ COPY --from=builder /root/.local /usr/local
 # Copy application code with proper ownership
 COPY --chown=footballai:footballai . .
 
+# Create directories that the app needs at runtime (models directory)
+RUN mkdir -p /app/models && \
+    chown -R footballai:footballai /app/models && \
+    chmod 755 /app/models
+
 # Make sure Python packages are in PATH
 ENV PATH=/usr/local/bin:$PATH
 ENV PYTHONPATH=/app

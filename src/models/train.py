@@ -31,7 +31,14 @@ except ImportError:
 
 BASE_DIR = Path(__file__).parent.parent.parent
 MODEL_DIR = BASE_DIR / "models"
-MODEL_DIR.mkdir(exist_ok=True)
+# Create models directory if it doesn't exist (handle permission errors gracefully)
+try:
+    MODEL_DIR.mkdir(exist_ok=True, parents=True)
+except PermissionError:
+    # If we can't create it, try to use /tmp/models instead
+    MODEL_DIR = Path("/tmp/models")
+    MODEL_DIR.mkdir(exist_ok=True, parents=True)
+    print(f"⚠️ Warning: Could not create models directory in /app, using /tmp/models instead")
 
 MODEL_PATH = MODEL_DIR / "football_model.pkl"
 SCALER_PATH = MODEL_DIR / "scaler.pkl"
