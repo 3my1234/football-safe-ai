@@ -23,10 +23,8 @@ class MatchFetcher:
         
         if self.use_broadage:
             self.api_key = os.getenv("BROADAGE_API_KEY", "")
-            # Broadage API base URL - check their documentation for the correct host
-            # The user's docs show {{host}} placeholder - check Broadage dashboard for actual URL
-            # Common patterns: api.broadage.com, {subscription}.azure-api.net, api.broadage.io, etc.
-            self.base_url = os.getenv("BROADAGE_API_URL", "https://api.broadage.com")
+            # Broadage API base URL - from user's dashboard: https://s0-sports-data-api.broadage.com
+            self.base_url = os.getenv("BROADAGE_API_URL", "https://s0-sports-data-api.broadage.com")
             self.language_id = int(os.getenv("BROADAGE_LANGUAGE_ID", "1"))  # Default: English (1)
             
             # Headers: Ocp-Apim-Subscription-Key is standard for Azure API Management
