@@ -154,15 +154,21 @@ class MatchFetcher:
         print(f"📡 Fetching matches from Broadage API for {today}...")
         
         # Based on Broadage Soccer API docs:
-        # - Match List: All endpoint is /soccer/match/list
+        # - Endpoints may be case-sensitive (TournamentFixture shows capital F)
+        # - Try different "Match List" endpoint variations
         # - Headers: languageId (INT, Required), Ocp-Apim-Subscription-Key (Required)
-        # - Parameters: date (likely required or optional for filtering)
         
         matches_data = []
         api_errors = []
         
-        # The correct endpoint from Broadage docs
-        endpoint = f"{self.base_url}/soccer/match/list"
+        # Try different endpoint variations (case-sensitive, different formats)
+        possible_endpoints = [
+            f"{self.base_url}/soccer/MatchList/All",  # Case-sensitive version
+            f"{self.base_url}/soccer/match/list/all",
+            f"{self.base_url}/soccer/MatchList/Scheduled",  # For scheduled matches
+            f"{self.base_url}/soccer/match/list",
+            f"{self.base_url}/soccer/matchList/all",
+        ]
         
         # Try date parameter variations (Broadage might use different date formats)
         date_formats = [
@@ -173,42 +179,57 @@ class MatchFetcher:
         
         # Based on docs: languageId must be INT in headers (Required)
         # Ocp-Apim-Subscription-Key already in self.headers
+        # Try different languageId formats (as string or ensure it's numeric)
         auth_configs = [
             {
-                "name": "languageId as INT header + date param",
-                "headers": {**self.headers, "languageId": str(self.language_id)},
+                "name": "languageId as string header + date param",
+                "headers": {
+                    "Ocp-Apim-Subscription-Key": self.api_key,
+                    "Accept": "application/json",
+                    "languageId": str(self.language_id)
+                },
                 "params": {"date": today}
             },
             {
-                "name": "languageId as INT header + no date (get all)",
-                "headers": {**self.headers, "languageId": str(self.language_id)},
+                "name": "languageId as numeric string + no date",
+                "headers": {
+                    "Ocp-Apim-Subscription-Key": self.api_key,
+                    "Accept": "application/json",
+                    "languageId": "1"  # Explicit numeric string
+                },
                 "params": {}
             },
             {
-                "name": "languageId as INT header + date DD/MM/YYYY",
-                "headers": {**self.headers, "languageId": str(self.language_id)},
-                "params": {"date": date_formats[2]}
+                "name": "Verify API key format - exact headers from docs",
+                "headers": {
+                    "Ocp-Apim-Subscription-Key": self.api_key.strip(),  # Remove any whitespace
+                    "Accept": "application/json",
+                    "languageId": "1"
+                },
+                "params": {"date": today}
             },
         ]
         
-        # Try the correct endpoint with different configurations
-        for config in auth_configs:
-            try:
-                print(f"  📡 Calling: {endpoint}")
-                print(f"     Config: {config['name']}")
-                print(f"     Headers: Ocp-Apim-Subscription-Key={self.api_key[:10]}..., languageId={self.language_id}")
-                print(f"     Params: {config['params']}")
-                
-                response = requests.get(
-                    endpoint, 
-                    headers=config['headers'], 
-                    params=config['params'], 
-                    timeout=15
-                )
+        # Try each endpoint with authentication configs
+        for endpoint in possible_endpoints:
+            for config in auth_configs:
+                try:
+                    print(f"  📡 Calling: {endpoint}")
+                    print(f"     Config: {config['name']}")
+                    print(f"     Headers: Ocp-Apim-Subscription-Key={self.api_key[:10]}..., languageId={self.language_id}")
+                    print(f"     Params: {config['params']}")
+                    
+                    response = requests.get(
+                        endpoint, 
+                        headers=config['headers'], 
+                        params=config['params'], 
+                        timeout=15
+                    )
                 
                 if response.status_code == 200:
                     data = response.json()
-                    print(f"  ✅ Success! Config that worked: {config['name']}")
+                    print(f"  ✅ Success! Endpoint: {endpoint}")
+                    print(f"  ✅ Config that worked: {config['name']}")
                     print(f"  🔍 Response structure: {list(data.keys())[:5] if isinstance(data, dict) else 'Array'}...")
                     
                     # Parse Broadage response based on their API structure
@@ -251,25 +272,44 @@ class MatchFetcher:
                         matches_data = filtered_matches if filtered_matches else matches_data
                     
                     print(f"  ✅ Found {len(matches_data)} matches from Broadage for {today}")
-                    break  # Found working configuration
+                    break  # Found working endpoint/config combination
+            
+            if matches_data:
+                break  # Found working endpoint, stop trying others
                         
                 elif response.status_code == 401:
                     error_body = ""
                     try:
-                        error_body = response.text[:500] if response.text else "No response body"
+                        # Try JSON first
+                        try:
+                            error_json = response.json()
+                            error_body = str(error_json)
+                        except:
+                            error_body = response.text[:1000] if response.text else "No response body"
                     except:
                         error_body = "Could not read response body"
+                    
+                    # Check response headers for error details
+                    response_headers = dict(response.headers)
                     
                     error_msg = f"401 Unauthorized - {config['name']}"
                     api_errors.append(error_msg)
                     print(f"  ❌ {error_msg}")
-                    print(f"     Response: {error_body}")
+                    print(f"     Response body: {error_body}")
+                    print(f"     Response headers: {response_headers}")
+                    print(f"     Request headers sent: {config['headers']}")
+                    print(f"     API key preview: {self.api_key[:15]}... (length: {len(self.api_key)})")
                     
-                    # Diagnose the issue
-                    if "subscription" in error_body.lower() or "key" in error_body.lower():
-                        print(f"     ⚠️ API key authentication issue")
-                    if "language" in error_body.lower():
-                        print(f"     ⚠️ languageId format issue")
+                    # Check for specific error indicators
+                    error_lower = error_body.lower()
+                    if "subscription" in error_lower or "key" in error_lower:
+                        print(f"     ⚠️ API key authentication issue detected")
+                    if "language" in error_lower:
+                        print(f"     ⚠️ languageId format issue detected")
+                    if "ip" in error_lower or "whitelist" in error_lower:
+                        print(f"     ⚠️ IP whitelist issue detected")
+                    if not error_body or error_body == "No response body":
+                        print(f"     ⚠️ Empty response - API might be rejecting request at gateway level")
                     
                     continue
                     
