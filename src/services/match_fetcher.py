@@ -147,17 +147,19 @@ class MatchFetcher:
         all_matches = []
         
         # Broadage API endpoints - based on their documentation structure
+        # Documentation shows: GET {{host}}/global/sport/list
         # Soccer/Football sport ID is 1 (from their docs)
-        # Try common endpoint patterns for matches/fixtures
-        # Common patterns: /soccer/match/list, /football/match/list, /global/match/list, etc.
+        # Try multiple endpoint patterns and authentication methods
         
         print(f"📡 Fetching matches from Broadage API for {today}...")
         
-        # Try multiple possible endpoint patterns
+        # Try multiple possible endpoint patterns (based on /global/{resource}/list pattern)
         possible_endpoints = [
-            f"{self.base_url}/soccer/match/list",  # Most likely
+            f"{self.base_url}/global/soccer/match/list",  # Following /global/sport/list pattern
+            f"{self.base_url}/global/match/list",  # Generic match list
+            f"{self.base_url}/soccer/match/list",
             f"{self.base_url}/football/match/list",
-            f"{self.base_url}/global/match/list",
+            f"{self.base_url}/global/soccer/match",
             f"{self.base_url}/soccer/match",
             f"{self.base_url}/football/fixtures",
         ]
@@ -165,59 +167,135 @@ class MatchFetcher:
         matches_data = []
         api_errors = []
         
+        # Try different combinations of headers and params
+        auth_configs = [
+            {
+                "name": "languageId as header (INT)",
+                "headers": {**self.headers, "languageId": self.language_id_header},
+                "params": {"date": today}
+            },
+            {
+                "name": "languageId as header (INT) + sportId param",
+                "headers": {**self.headers, "languageId": self.language_id_header},
+                "params": {"date": today, "sportId": "1"}
+            },
+            {
+                "name": "languageId as query param",
+                "headers": self.headers,
+                "params": {"date": today, "languageId": self.language_id_header}
+            },
+            {
+                "name": "languageId as query param + sportId",
+                "headers": self.headers,
+                "params": {"date": today, "languageId": self.language_id_header, "sportId": "1"}
+            },
+            {
+                "name": "No languageId (optional)",
+                "headers": self.headers,
+                "params": {"date": today}
+            },
+            {
+                "name": "No languageId + sportId",
+                "headers": self.headers,
+                "params": {"date": today, "sportId": "1"}
+            },
+        ]
+        
         for endpoint_url in possible_endpoints:
-            try:
-                # Try languageId as header first
-                headers_with_lang = {**self.headers, "languageId": self.language_id_header}
-                
-                params = {
-                    "date": today,
-                    # Add other params if needed based on docs
-                }
-                
-                print(f"  📡 Trying endpoint: {endpoint_url}")
-                print(f"     Headers: Ocp-Apim-Subscription-Key={self.api_key[:10]}..., languageId={self.language_id_header}")
-                print(f"     Params: date={today}")
-                response = requests.get(endpoint_url, headers=headers_with_lang, params=params, timeout=15)
-            
-                if response.status_code == 200:
-                    data = response.json()
-                    print(f"  ✅ Success! Endpoint works: {endpoint_url}")
-                    print(f"  🔍 Response structure: {list(data.keys())[:5] if isinstance(data, dict) else 'Array'}...")
+            for config in auth_configs:
+                try:
+                    print(f"  📡 Trying endpoint: {endpoint_url}")
+                    print(f"     Config: {config['name']}")
+                    print(f"     Headers: {list(config['headers'].keys())}")
+                    print(f"     Params: {list(config['params'].keys())}")
                     
-                    # Parse Broadage response - try multiple possible formats
-                    matches_data = (
-                        data.get("data", []) or 
-                        data.get("matches", []) or 
-                        data.get("results", []) or
-                        data.get("response", []) or
-                        data.get("list", []) or
-                        (data if isinstance(data, list) else [])
+                    response = requests.get(
+                        endpoint_url, 
+                        headers=config['headers'], 
+                        params=config['params'], 
+                        timeout=15
                     )
-                    
-                    print(f"  ✅ Found {len(matches_data)} matches from Broadage")
-                    break  # Found working endpoint, stop trying others
-                    
-                elif response.status_code == 401:
-                    error_msg = "401 Unauthorized - Check API key"
-                    api_errors.append(error_msg)
-                    print(f"  ❌ {error_msg} - Trying next endpoint...")
+                
+                    if response.status_code == 200:
+                        data = response.json()
+                        print(f"  ✅ Success! Endpoint works: {endpoint_url}")
+                        print(f"  ✅ Config that worked: {config['name']}")
+                        print(f"  🔍 Response structure: {list(data.keys())[:5] if isinstance(data, dict) else 'Array'}...")
+                        print(f"  🔍 Response preview: {str(data)[:200]}...")
+                        
+                        # Parse Broadage response - try multiple possible formats
+                        matches_data = (
+                            data.get("data", []) or 
+                            data.get("matches", []) or 
+                            data.get("results", []) or
+                            data.get("response", []) or
+                            data.get("list", []) or
+                            (data if isinstance(data, list) else [])
+                        )
+                        
+                        print(f"  ✅ Found {len(matches_data)} matches from Broadage")
+                        break  # Found working combination
+                        
+                    elif response.status_code == 401:
+                        # Detailed error logging
+                        error_body = ""
+                        try:
+                            error_body = response.text[:500] if response.text else "No response body"
+                        except:
+                            error_body = "Could not read response body"
+                        
+                        error_msg = f"401 Unauthorized - {endpoint_url} ({config['name']})"
+                        api_errors.append(error_msg)
+                        print(f"  ❌ {error_msg}")
+                        print(f"     Response body: {error_body}")
+                        print(f"     Response headers: {dict(response.headers)}")
+                        continue
+                        
+                    elif response.status_code == 404:
+                        # Detailed error logging
+                        error_body = ""
+                        try:
+                            error_body = response.text[:500] if response.text else "No response body"
+                        except:
+                            error_body = "Could not read response body"
+                        
+                        print(f"  ⚠️ 404 Not Found - {endpoint_url} ({config['name']})")
+                        print(f"     Response body: {error_body}")
+                        continue
+                        
+                    elif response.status_code == 403:
+                        error_body = ""
+                        try:
+                            error_body = response.text[:500] if response.text else "No response body"
+                        except:
+                            error_body = "Could not read response body"
+                        
+                        error_msg = f"403 Forbidden - IP not whitelisted ({endpoint_url})"
+                        api_errors.append(error_msg)
+                        print(f"  ❌ {error_msg}")
+                        print(f"     Response body: {error_body}")
+                        print(f"     Response headers: {dict(response.headers)}")
+                        break  # IP issue, won't work on other endpoints either
+                        
+                    else:
+                        error_body = ""
+                        try:
+                            error_body = response.text[:500] if response.text else "No response body"
+                        except:
+                            error_body = "Could not read response body"
+                        
+                        print(f"  ⚠️ HTTP {response.status_code} - {endpoint_url} ({config['name']})")
+                        print(f"     Response body: {error_body}")
+                        continue
+                        
+                except Exception as e:
+                    import traceback
+                    print(f"  ⚠️ Error with {endpoint_url} ({config['name']}): {e}")
+                    print(f"     Traceback: {traceback.format_exc()[:300]}")
                     continue
-                elif response.status_code == 404:
-                    print(f"  ⚠️ 404 Not Found - Trying next endpoint...")
-                    continue
-                elif response.status_code == 403:
-                    error_msg = "403 Forbidden - IP not whitelisted"
-                    api_errors.append(error_msg)
-                    print(f"  ❌ {error_msg}")
-                    break  # IP issue, won't work on other endpoints either
-                else:
-                    print(f"  ⚠️ HTTP {response.status_code} - Trying next endpoint...")
-                    continue
-                    
-            except Exception as e:
-                print(f"  ⚠️ Error with {endpoint_url}: {e} - Trying next...")
-                continue
+            
+            if matches_data:
+                break  # Found working endpoint, stop trying others
         
         # Parse matches if found
         if matches_data:
@@ -278,7 +356,7 @@ class MatchFetcher:
                                     "season": 2024
                                 }
                                 try:
-                                    response_2024 = requests.get(url, headers=headers, params=params_2024, timeout=15)
+                                    response_2024 = requests.get(url, headers=self.headers, params=params_2024, timeout=15)
                                     if response_2024.status_code == 200:
                                         data_2024 = response_2024.json()
                                         if not (data_2024.get("errors") and data_2024["errors"]):
