@@ -325,29 +325,57 @@ async def test_api_connection():
         "x-rapidapi-host": "v3.football.api-sports.io"
     }
     
-    # Test with Bundesliga (league 78) which should have matches today
-    params = {
-        "date": today,
-        "league": 78,  # Bundesliga
-        "season": datetime.now().year
-    }
+    # Test multiple leagues to see which ones have matches
+    test_leagues = [
+        (78, "Bundesliga"),
+        (39, "EPL"),
+        (140, "LaLiga"),
+        (135, "SerieA"),
+        (61, "Ligue1"),
+    ]
     
+    results = []
+    for league_id, league_name in test_leagues:
+        params = {
+            "date": today,
+            "league": league_id,
+            "season": datetime.now().year
+        }
+        
+        try:
+            response = requests.get(url, headers=headers, params=params, timeout=15)
+            if response.status_code == 200:
+                data = response.json()
+                results.append({
+                    "league": f"{league_name} ({league_id})",
+                    "results": data.get("results", 0),
+                    "has_matches": data.get("results", 0) > 0,
+                    "response_count": len(data.get("response", []))
+                })
+        except Exception as e:
+            results.append({
+                "league": f"{league_name} ({league_id})",
+                "error": str(e)
+            })
+    
+    # Also test without league filter to see all matches today
     try:
-        response = requests.get(url, headers=headers, params=params, timeout=15)
-        return {
-            "status_code": response.status_code,
-            "url": url,
-            "params": params,
-            "headers_set": bool(headers.get("x-rapidapi-key")),
-            "response": response.json() if response.status_code == 200 else {"error": response.text[:500]},
-            "today": today
-        }
-    except Exception as e:
-        return {
-            "error": str(e),
-            "url": url,
-            "params": params
-        }
+        params_all = {"date": today}
+        response_all = requests.get(url, headers=headers, params=params_all, timeout=15)
+        if response_all.status_code == 200:
+            data_all = response_all.json()
+            total_matches = data_all.get("results", 0)
+    except:
+        total_matches = "error"
+    
+    return {
+        "status": "API connection working",
+        "today": today,
+        "season": datetime.now().year,
+        "league_tests": results,
+        "all_matches_today": total_matches,
+        "note": "If all leagues return 0, there might be no matches scheduled today, or check date/timezone"
+    }
 
 
 @app.get("/matches/today")
