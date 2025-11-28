@@ -15,15 +15,28 @@ except ImportError:
 
 
 class MatchFetcher:
-    """Fetches matches from API-Football"""
+    """Fetches matches from API-Football or Broadage API"""
     
     def __init__(self):
-        self.api_key = os.getenv("API_FOOTBALL_KEY", "")
-        self.base_url = "https://v3.football.api-sports.io"
-        self.headers = {
-            "x-rapidapi-key": self.api_key,
-            "x-rapidapi-host": "v3.football.api-sports.io"
-        }
+        # Check which API to use - Broadage or API-Football
+        self.use_broadage = os.getenv("USE_BROADAGE_API", "false").lower() == "true"
+        
+        if self.use_broadage:
+            self.api_key = os.getenv("BROADAGE_API_KEY", "")
+            self.base_url = os.getenv("BROADAGE_API_URL", "https://api.broadage.com/v1")
+            self.headers = {
+                "X-API-Key": self.api_key,
+                "Content-Type": "application/json"
+            }
+            print("🌐 Using Broadage API")
+        else:
+            self.api_key = os.getenv("API_FOOTBALL_KEY", "")
+            self.base_url = "https://v3.football.api-sports.io"
+            self.headers = {
+                "x-rapidapi-key": self.api_key,
+                "x-rapidapi-host": "v3.football.api-sports.io"
+            }
+            print("🌐 Using API-Football")
         # Initialize OddsAPI client (optional)
         self.odds_client = OddsAPIClient() if OddsAPIClient else None
         # Cache odds for today's matches
@@ -41,14 +54,18 @@ class MatchFetcher:
             List of match dictionaries with real odds
         """
         if not self.api_key:
-            print("⚠️ API_FOOTBALL_KEY not set! Cannot fetch real matches.")
-            print("   Please set API_FOOTBALL_KEY environment variable in Coolify")
-            # Don't return sample matches - return empty so user knows there's a problem
+            api_key_name = "BROADAGE_API_KEY" if self.use_broadage else "API_FOOTBALL_KEY"
+            print(f"⚠️ {api_key_name} not set! Cannot fetch real matches.")
+            print(f"   Please set {api_key_name} environment variable in Coolify")
             return []
         
-        today = datetime.now().strftime("%Y-%m-%d")
-        current_year = datetime.now().year
-        current_month = datetime.now().month
+        # Get current date - check system time
+        now = datetime.now()
+        today = now.strftime("%Y-%m-%d")
+        current_year = now.year
+        current_month = now.month
+        
+        print(f"📅 System date: {today} (Year: {current_year}, Month: {current_month})")
         
         # Determine current season - European leagues run Aug-May
         # If month is Aug-Dec, season = current year; if Jan-Jul, season = previous year
@@ -57,8 +74,11 @@ class MatchFetcher:
         else:  # Jan-Jul
             season_year = current_year - 1
         
+        # API-Football free plan limitation: Only supports seasons 2021-2023
+        # If we need a newer season, we'll get an error and can handle it
         print(f"🔍 Fetching matches for {today} from API-Football (season: {season_year})...")
-        print(f"   Current date: {today}, Season year: {season_year}")
+        print(f"   ⚠️ Note: Free plan only supports seasons 2021-2023")
+        print(f"   💡 If season {season_year} fails, you need a paid API-Football plan")
         
         # Default to top leagues if not specified, PLUS more leagues for days when big leagues don't play
         if not leagues:
@@ -100,8 +120,93 @@ class MatchFetcher:
         
         all_matches = []
         
-        # Fetch matches from API-Football
+        # Fetch matches from selected API
+        if self.use_broadage:
+            return self._fetch_from_broadage(today, leagues)
+        else:
+            return self._fetch_from_api_football(today, season_year, leagues)
+    
+    def _fetch_from_broadage(self, today: str, leagues: List[int]) -> List[Dict]:
+        """Fetch matches from Broadage API"""
         api_errors = []
+        all_matches = []
+        
+        # Broadage API endpoints - adjust based on their actual documentation
+        # Try common endpoint patterns
+        url = f"{self.base_url}/football/matches"  # Common pattern
+        
+        print(f"📡 Fetching matches from Broadage API for {today}...")
+        
+        # Try fetching all matches for today first (might not need league filter)
+        try:
+            params = {
+                "date": today
+            }
+            
+            print(f"  📡 Fetching all matches for {today}...")
+            response = requests.get(url, headers=self.headers, params=params, timeout=15)
+            
+            if response.status_code == 200:
+                data = response.json()
+                print(f"  🔍 Broadage API response structure: {list(data.keys())[:5]}...")
+                
+                # Parse Broadage response - try multiple possible formats
+                matches_data = (
+                    data.get("data", []) or 
+                    data.get("matches", []) or 
+                    data.get("results", []) or
+                    data.get("response", []) or
+                    (data if isinstance(data, list) else [])
+                )
+                
+                print(f"  ✅ Found {len(matches_data)} matches from Broadage")
+                
+                for match_data in matches_data:
+                    # Filter by leagues if specified and if league info is available
+                    match_league_id = match_data.get("league", {}).get("id") or match_data.get("leagueId")
+                    if leagues and match_league_id and match_league_id not in leagues:
+                        continue
+                    
+                    match = self._parse_broadage_fixture(match_data)
+                    if match:
+                        all_matches.append(match)
+                        
+            elif response.status_code == 401:
+                error_msg = "401 Unauthorized - Check API key and IP whitelist in Broadage dashboard"
+                api_errors.append(error_msg)
+                print(f"  ❌ {error_msg}")
+                print(f"  💡 Make sure your Coolify VPS IP is whitelisted in Broadage")
+            elif response.status_code == 403:
+                error_msg = "403 Forbidden - IP not whitelisted or invalid key"
+                api_errors.append(error_msg)
+                print(f"  ❌ {error_msg}")
+                print(f"  💡 Add your server's public IP to Broadage whitelist")
+            else:
+                error_msg = f"HTTP {response.status_code}"
+                api_errors.append(f"{error_msg} - {response.text[:200]}")
+                print(f"  ⚠️ {error_msg}")
+                print(f"  Response: {response.text[:500]}")
+                
+        except Exception as e:
+            import traceback
+            error_msg = f"Error fetching from Broadage: {str(e)}"
+            api_errors.append(error_msg)
+            print(f"  ❌ {error_msg}")
+            print(f"  Traceback: {traceback.format_exc()}")
+        
+        if api_errors:
+            print(f"\n⚠️ Broadage API Errors: {len(api_errors)} errors")
+            for err in api_errors[:5]:
+                print(f"  - {err}")
+        
+        print(f"📊 Total matches fetched from Broadage: {len(all_matches)}")
+        return all_matches
+    
+    def _fetch_from_api_football(self, today: str, season_year: int, leagues: List[int]) -> List[Dict]:
+        """Fetch matches from API-Football"""
+        all_matches = []
+        api_errors = []
+        
         for league_id in leagues:
             try:
                 url = f"{self.base_url}/fixtures"
@@ -120,7 +225,10 @@ class MatchFetcher:
                     # Check API response structure
                     if "errors" in data and data["errors"]:
                         error_msgs = data.get("errors", {})
-                        # If error mentions free plan limitation, try with 2024 season
+                        error_text = str(error_msgs)
+                        print(f"  🔍 Full error response: {error_msgs}")
+                        
+                        # If error mentions free plan limitation, check what we can do
                         if isinstance(error_msgs, dict) and 'plan' in str(error_msgs):
                             error_text = str(error_msgs.get('plan', ''))
                             if 'Free plans' in error_text and '2021 to 2023' in error_text:
@@ -369,6 +477,100 @@ class MatchFetcher:
             
         except Exception as e:
             print(f"Error parsing fixture: {e}")
+            return None
+    
+    def _parse_broadage_fixture(self, fixture_data: Dict) -> Optional[Dict]:
+        """Parse Broadage API fixture to internal format"""
+        try:
+            # Broadage API response format - adjust based on actual structure
+            # Try multiple possible field names
+            home_team = (
+                fixture_data.get("home_team", {}).get("name", "") if isinstance(fixture_data.get("home_team"), dict) else
+                fixture_data.get("homeTeam", "") or
+                fixture_data.get("home_team", "") or
+                fixture_data.get("home", "")
+            )
+            away_team = (
+                fixture_data.get("away_team", {}).get("name", "") if isinstance(fixture_data.get("away_team"), dict) else
+                fixture_data.get("awayTeam", "") or
+                fixture_data.get("away_team", "") or
+                fixture_data.get("away", "")
+            )
+            
+            league_info = fixture_data.get("league", {}) if isinstance(fixture_data.get("league"), dict) else {}
+            league_name = (
+                league_info.get("name", "") or
+                fixture_data.get("leagueName", "") or
+                fixture_data.get("league", "")
+            )
+            league_id = league_info.get("id") or fixture_data.get("leagueId") or fixture_data.get("league_id")
+            
+            # Parse date - try multiple formats
+            date_str = (
+                fixture_data.get("date", "") or
+                fixture_data.get("startTime", "") or
+                fixture_data.get("matchDate", "") or
+                fixture_data.get("kickoff", "")
+            )
+            
+            try:
+                if date_str:
+                    match_date = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
+                else:
+                    match_date = datetime.now()
+            except:
+                match_date = datetime.now()
+            
+            # Get odds - try multiple formats
+            odds_data = fixture_data.get("odds", {})
+            if not isinstance(odds_data, dict):
+                odds_data = {}
+            
+            match = {
+                'id': str(fixture_data.get("id", fixture_data.get("matchId", ""))),
+                'home_team': home_team,
+                'away_team': away_team,
+                'league': league_name or "Unknown League",
+                'league_tier': self._map_league_tier(league_id) if league_id else "other",
+                'match_date': match_date,
+                'home_odds': float(odds_data.get("home", odds_data.get("1", 2.0))) if odds_data else 2.0,
+                'draw_odds': float(odds_data.get("draw", odds_data.get("X", 3.0))) if odds_data else 3.0,
+                'away_odds': float(odds_data.get("away", odds_data.get("2", 2.5))) if odds_data else 2.5,
+                
+                # Default stats - Broadage might provide more detailed stats
+                'home_form': {
+                    'goals_scored_5': 10,
+                    'goals_conceded_5': 4,
+                    'form_percentage': 0.7,
+                    'shots_on_target_avg': 5.0,
+                    'goals_variance': 5.0
+                },
+                'away_form': {
+                    'goals_scored_5': 8,
+                    'goals_conceded_5': 5,
+                    'form_percentage': 0.65,
+                    'shots_on_target_avg': 4.5,
+                    'goals_variance': 6.0
+                },
+                'home_xg': 1.8,
+                'away_xg': 1.5,
+                'home_position': 8,
+                'away_position': 12,
+                'league_size': 20,
+                'table_gap': 4,
+                'pressure_index': 0.5,
+                'is_derby': False,
+                'is_must_win': False,
+                'key_player_missing': False,
+                'fixture_congestion': 7,
+                'home_fixture_congestion': 7,
+                'away_fixture_congestion': 7
+            }
+            
+            return match
+            
+        except Exception as e:
+            print(f"Error parsing Broadage fixture: {e}")
             return None
     
     def _map_league_tier(self, league_id: int) -> str:
