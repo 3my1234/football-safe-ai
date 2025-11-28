@@ -304,6 +304,33 @@ async def get_raw_predictions(db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.get("/check-date")
+async def check_date():
+    """Check what date the server thinks it is"""
+    from datetime import datetime
+    import time
+    
+    now = datetime.now()
+    today_str = now.strftime("%Y-%m-%d")
+    current_year = now.year
+    current_month = now.month
+    
+    # Determine season
+    if current_month >= 8:
+        season_year = current_year
+    else:
+        season_year = current_year - 1
+    
+    return {
+        "server_date": today_str,
+        "server_year": current_year,
+        "server_month": current_month,
+        "calculated_season": season_year,
+        "timestamp": now.isoformat(),
+        "note": "If date is wrong, check server timezone/date settings"
+    }
+
+
 @app.get("/test-api")
 async def test_api_connection():
     """Test API-Football connection directly"""
