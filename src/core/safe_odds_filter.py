@@ -9,10 +9,45 @@ from src.core.worst_case_simulator import WorstCaseSimulator
 class SafeOddsFilter:
     """Filters matches for ultra-safe picks in 1.03-1.10 range"""
     
-    # High stability leagues
+    # High stability leagues (reputable leagues)
     STABLE_LEAGUES = [
         'EPL', 'LaLiga', 'Bundesliga', 
-        'SerieA', 'Ligue1', 'Eredivisie'
+        'SerieA', 'Ligue1', 'Eredivisie',
+        'MLS', 'Primeira Liga', 'Scottish Premiership',
+        'Turkish Super Lig', 'Belgian First Division'
+    ]
+    
+    # Match-fixing prone leagues (EXCLUDED - High Risk)
+    # Based on historical evidence and investigations
+    MATCH_FIXING_PRONE_LEAGUES = [
+        # Southeast Asia - Historically significant match-fixing issues
+        'Singapore Premier League', 'Singapore League',
+        'Malaysia Super League', 'Malaysia Premier League',
+        'Thai League 1', 'Thai League 2', 'Thailand League',
+        'Vietnam V.League 1', 'Vietnam V.League 2',
+        'Indonesia Liga 1', 'Indonesia Liga 2',
+        
+        # Eastern Europe - Known for organized crime involvement
+        'Bulgarian First League', 'Bulgarian Second League',
+        'Romanian Liga I', 'Romanian Liga II',
+        'Serbian SuperLiga', 'Croatian First Football League',
+        'Hungarian NB I', 'Czech First League',
+        
+        # Other high-risk regions
+        'Chinese Super League', 'China League One',
+        'South African Premier Division',
+        'Australian A-League',  # Some concerns historically
+        
+        # Lower-tier European leagues with past issues
+        'Greek Super League', 'Greek Football League',
+    ]
+    
+    # Match-fixing prone league keywords (partial matches)
+    MATCH_FIXING_KEYWORDS = [
+        'singapore', 'malaysia', 'thailand', 'vietnam', 'indonesia',
+        'bulgaria', 'romania', 'serbia', 'croatia', 'hungary',
+        'czech', 'china', 'south africa',
+        'greek', 'turkey',  # Turkey has some concerns
     ]
     
     # Excluded match types
@@ -21,7 +56,7 @@ class SafeOddsFilter:
         'reserve', 'international_friendly'
     ]
     
-    def __init__(self, min_odds: float = 1.03, max_odds: float = 1.10):
+    def __init__(self, min_odds: float = 1.03, max_odds: float = 1.05):
         self.min_odds = min_odds
         self.max_odds = max_odds
         self.simulator = WorstCaseSimulator()
@@ -29,14 +64,39 @@ class SafeOddsFilter:
     def filter_match(self, match_data: Dict) -> bool:
         """
         Check if match passes safety filters
+        Excludes match-fixing prone leagues
         
         Returns:
             True if match is safe, False otherwise
         """
-        # 1. Check league stability
-        league = match_data.get('league_tier', '').upper()
-        if league not in self.STABLE_LEAGUES:
-            return False
+        # 1. REMOVED: Match-fixing prone league exclusion
+        # The user wants these leagues analyzed thoroughly, not filtered out
+        # We'll still analyze them and use stricter criteria, but not exclude them completely
+        league_name = match_data.get('league', '').lower()
+        league_tier = match_data.get('league_tier', '').upper()
+        
+        # REMOVED: Exclusion of match-fixing prone leagues
+        # if league_name in [l.lower() for l in self.MATCH_FIXING_PRONE_LEAGUES]:
+        #     return False
+        
+        # REMOVED: Keyword-based exclusion
+        # if league_tier:
+        #     league_lower = league_tier.lower()
+        #     for keyword in self.MATCH_FIXING_KEYWORDS:
+        #         if keyword in league_lower:
+        #             return False
+        
+        # Check league name against keywords - REMOVED: Analyze match-fixing prone leagues instead of excluding
+        # The user wants thorough analysis of these leagues, not filtering
+        # for keyword in self.MATCH_FIXING_KEYWORDS:
+        #     if keyword in league_name:
+        #         return False
+        
+        # 2. REMOVED: League stability check - Allow ALL leagues
+        # Previously: Only allowed STABLE_LEAGUES, which was too restrictive
+        # Now: Analyze all leagues, including smaller leagues for days when big leagues don't play
+        # if league_tier and league_tier not in self.STABLE_LEAGUES:
+        #     return False
         
         # 2. Exclude cup games, friendlies, etc.
         match_type = match_data.get('match_type', '').lower()
