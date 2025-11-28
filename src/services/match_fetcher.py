@@ -37,9 +37,13 @@ class MatchFetcher:
             self.language_id_header = str(self.language_id)
             
             print("🌐 Using Broadage API")
-            print(f"   Base URL: {self.base_url}")
+            print(f"   Base URL (full): {self.base_url}")
+            print(f"   Base URL length: {len(self.base_url)} chars")
+            print(f"   Expected: https://s0-sports-data-api.broadage.com")
             print(f"   Language ID: {self.language_id}")
-            print(f"   ⚠️  If connection fails, check Broadage dashboard for correct API host URL")
+            if "s0-sports-data-api.broadage.com" not in self.base_url:
+                print(f"   ⚠️  WARNING: Base URL doesn't match expected format!")
+                print(f"   ⚠️  Check BROADAGE_API_URL environment variable in Coolify")
         else:
             self.api_key = os.getenv("API_FOOTBALL_KEY", "")
             self.base_url = "https://v3.football.api-sports.io"
