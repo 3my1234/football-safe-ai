@@ -309,25 +309,32 @@ class MatchFetcher:
                         
                         # Check response headers for error details
                         response_headers = dict(response.headers)
+                        error_message = response_headers.get('Message', '')
+                        error_code = response_headers.get('MessageCode', '')
                         
                         error_msg = f"401 Unauthorized - {config['name']}"
                         api_errors.append(error_msg)
                         print(f"  ❌ {error_msg}")
                         print(f"     Response body: {error_body}")
                         print(f"     Response headers: {response_headers}")
+                        if error_message:
+                            print(f"     ⚠️ API Error Message: {error_message} (Code: {error_code})")
+                            if "Language is invalid" in error_message:
+                                print(f"     💡 languageId={config['headers'].get('languageId', 'NOT SET')} is not valid for your subscription")
+                                print(f"     💡 Check Broadage dashboard for available language IDs")
                         print(f"     Request headers sent: {config['headers']}")
                         print(f"     API key preview: {self.api_key[:15]}... (length: {len(self.api_key)})")
                         
                         # Check for specific error indicators
-                        error_lower = error_body.lower()
+                        error_lower = (error_body + error_message).lower()
                         if "subscription" in error_lower or "key" in error_lower:
                             print(f"     ⚠️ API key authentication issue detected")
-                        if "language" in error_lower:
-                            print(f"     ⚠️ languageId format issue detected")
+                        if "language" in error_lower or "Language is invalid" in error_message:
+                            print(f"     ⚠️ languageId value issue - try different language ID or check dashboard")
                         if "ip" in error_lower or "whitelist" in error_lower:
                             print(f"     ⚠️ IP whitelist issue detected")
                         if not error_body or error_body == "No response body":
-                            print(f"     ⚠️ Empty response - API might be rejecting request at gateway level")
+                            print(f"     ⚠️ Empty response body but error in headers")
                         
                         continue
                         
