@@ -153,51 +153,35 @@ class MatchFetcher:
         
         print(f"📡 Fetching matches from Broadage API for {today}...")
         
-        # Try multiple possible endpoint patterns (based on /global/{resource}/list pattern)
+        # Based on Broadage docs: /global/sport/list pattern
+        # Try most likely endpoints first (fewer attempts = faster)
         possible_endpoints = [
+            f"{self.base_url}/soccer/match/list",  # Most likely based on 401 responses (endpoint exists)
             f"{self.base_url}/global/soccer/match/list",  # Following /global/sport/list pattern
-            f"{self.base_url}/global/match/list",  # Generic match list
-            f"{self.base_url}/soccer/match/list",
+            f"{self.base_url}/global/match/list",
             f"{self.base_url}/football/match/list",
-            f"{self.base_url}/global/soccer/match",
-            f"{self.base_url}/soccer/match",
-            f"{self.base_url}/football/fixtures",
         ]
         
         matches_data = []
         api_errors = []
         
-        # Try different combinations of headers and params
+        # Based on docs: languageId is INT in headers, Ocp-Apim-Subscription-Key for auth
+        # Try most likely configurations first
         auth_configs = [
             {
-                "name": "languageId as header (INT)",
-                "headers": {**self.headers, "languageId": self.language_id_header},
+                "name": "languageId as INT header (from docs)",
+                "headers": {**self.headers, "languageId": str(self.language_id)},
                 "params": {"date": today}
             },
             {
-                "name": "languageId as header (INT) + sportId param",
-                "headers": {**self.headers, "languageId": self.language_id_header},
+                "name": "languageId as INT header + sportId=1",
+                "headers": {**self.headers, "languageId": str(self.language_id)},
                 "params": {"date": today, "sportId": "1"}
             },
             {
-                "name": "languageId as query param",
-                "headers": self.headers,
-                "params": {"date": today, "languageId": self.language_id_header}
-            },
-            {
-                "name": "languageId as query param + sportId",
-                "headers": self.headers,
-                "params": {"date": today, "languageId": self.language_id_header, "sportId": "1"}
-            },
-            {
-                "name": "No languageId (optional)",
+                "name": "No languageId header",
                 "headers": self.headers,
                 "params": {"date": today}
-            },
-            {
-                "name": "No languageId + sportId",
-                "headers": self.headers,
-                "params": {"date": today, "sportId": "1"}
             },
         ]
         
@@ -248,7 +232,11 @@ class MatchFetcher:
                         api_errors.append(error_msg)
                         print(f"  ❌ {error_msg}")
                         print(f"     Response body: {error_body}")
-                        print(f"     Response headers: {dict(response.headers)}")
+                        # Check if error message hints at what's wrong
+                        if "subscription" in error_body.lower() or "key" in error_body.lower():
+                            print(f"     ⚠️ Possible API key issue - verify key format")
+                        if "language" in error_body.lower():
+                            print(f"     ⚠️ Possible languageId format issue")
                         continue
                         
                     elif response.status_code == 404:
