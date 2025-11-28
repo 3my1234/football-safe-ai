@@ -103,16 +103,19 @@ class SafeOddsFilter:
         if any(excluded in match_type for excluded in self.EXCLUDED_TYPES):
             return False
         
-        # 3. Check team stability (low variance stats)
+        # 3. Check team stability (low variance stats) - RELAXED for initial testing
         home_form = match_data.get('home_form', {})
         away_form = match_data.get('away_form', {})
         
         # Both teams should have consistent scoring
-        home_goals_variance = home_form.get('goals_variance', 100)
-        away_goals_variance = away_form.get('goals_variance', 100)
+        # If variance not available, skip this check (don't filter out)
+        home_goals_variance = home_form.get('goals_variance', None)
+        away_goals_variance = away_form.get('goals_variance', None)
         
-        # Low variance = more predictable
-        if home_goals_variance > 10 or away_goals_variance > 10:
+        # Only filter if variance is explicitly provided AND too high
+        if home_goals_variance is not None and home_goals_variance > 10:
+            return False
+        if away_goals_variance is not None and away_goals_variance > 10:
             return False
         
         # 4. Exclude high-pressure desperation games
@@ -120,20 +123,28 @@ class SafeOddsFilter:
         if pressure_index > 0.8:  # Too much pressure = volatility
             return False
         
-        # 5. Check if teams are in relegation zone (too desperate)
-        home_position = match_data.get('home_position', 10)
-        away_position = match_data.get('away_position', 10)
+        # 5. Check if teams are in relegation zone (too desperate) - RELAXED
+        home_position = match_data.get('home_position', None)
+        away_position = match_data.get('away_position', None)
         league_size = match_data.get('league_size', 20)
         
-        # Teams in bottom 3 are too desperate
-        if home_position > league_size - 2 or away_position > league_size - 2:
+        # Only filter if position data is available and in bottom 3
+        if home_position is not None and league_size and home_position > league_size - 2:
+            return False
+        if away_position is not None and league_size and away_position > league_size - 2:
             return False
         
-        # 6. Check fixture congestion (tired teams = unpredictable)
-        home_congestion = match_data.get('home_fixture_congestion', 7)
-        away_congestion = match_data.get('away_fixture_congestion', 7)
+        # 6. Check fixture congestion (tired teams = unpredictable) - RELAXED
+        home_congestion = match_data.get('home_fixture_congestion', None)
+        away_congestion = match_data.get('away_fixture_congestion', None)
+        fixture_congestion = match_data.get('fixture_congestion', None)  # Alternative field name
         
-        if home_congestion < 2 or away_congestion < 2:  # Very tired
+        # Only filter if congestion data is explicitly provided and very low
+        if home_congestion is not None and home_congestion < 2:
+            return False
+        if away_congestion is not None and away_congestion < 2:
+            return False
+        if fixture_congestion is not None and fixture_congestion < 2:
             return False
         
         # 7. Exclude derby matches (too volatile)
@@ -185,17 +196,19 @@ class SafeOddsFilter:
             if odds < self.min_odds or odds > self.max_odds:
                 continue
             
-            # 4. Check worst-case scenario survival
+            # 4. Check worst-case scenario survival - RELAXED for initial testing
             base_prob = pred.get('confidence', 0)
             worst_case_result = self.simulator.test_all_scenarios(
                 match_data, market_type, base_prob
             )
             
-            if not worst_case_result['survives_all']:
-                continue
+            # Relaxed: Only check if worst_case_result is available
+            # Don't filter out if worst case check fails - we'll still consider it
+            # if worst_case_result.get('survives_all') == False:
+            #     continue
             
-            # 5. Check confidence threshold
-            if base_prob < 0.95:  # 95% minimum confidence
+            # 5. Check confidence threshold - RELAXED from 0.95 to 0.90
+            if base_prob < 0.90:  # 90% minimum confidence (relaxed from 95%)
                 continue
             
             # Add to filtered list
