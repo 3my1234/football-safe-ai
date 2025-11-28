@@ -25,7 +25,8 @@ class MatchFetcher:
             self.api_key = os.getenv("BROADAGE_API_KEY", "")
             # Broadage API base URL - from user's dashboard: https://s0-sports-data-api.broadage.com
             self.base_url = os.getenv("BROADAGE_API_URL", "https://s0-sports-data-api.broadage.com")
-            self.language_id = int(os.getenv("BROADAGE_LANGUAGE_ID", "1"))  # Default: English (1)
+            # Default to 2 (working for trial subscription), can override with env var
+            self.language_id = int(os.getenv("BROADAGE_LANGUAGE_ID", "2"))  # Default: 2 (works for trial)
             
             # Headers: Ocp-Apim-Subscription-Key is standard for Azure API Management
             # languageId might need to be in headers OR params - trying headers first
@@ -184,14 +185,27 @@ class MatchFetcher:
         # Trial subscriptions often only allow specific language IDs (not 1 or 0)
         today_dd_mm_yyyy = datetime.strptime(today, "%Y-%m-%d").strftime("%d/%m/%Y")
         
-        # Try language IDs starting from 2 (1 and 0 are invalid)
-        # Limit to 10 attempts to avoid infinite loops
-        language_ids_to_try = [str(i) for i in range(2, 12)]  # 2, 3, 4, ..., 11
+        # Start with the configured languageId (default 2, which works for trial)
+        # If that fails, try other values
+        primary_lang_id = str(self.language_id)
+        fallback_language_ids = [str(i) for i in range(2, 12) if i != self.language_id]
         
-        auth_configs = []
-        for lang_id in language_ids_to_try:
+        auth_configs = [
+            {
+                "name": f"languageId={primary_lang_id} (configured/default) + date DD/MM/YYYY",
+                "headers": {
+                    "Ocp-Apim-Subscription-Key": self.api_key.strip(),
+                    "Accept": "application/json",
+                    "languageId": primary_lang_id
+                },
+                "params": {"date": today_dd_mm_yyyy}
+            }
+        ]
+        
+        # Add fallback language IDs only if primary fails
+        for lang_id in fallback_language_ids[:5]:  # Limit to 5 fallbacks
             auth_configs.append({
-                "name": f"languageId={lang_id} + date DD/MM/YYYY",
+                "name": f"languageId={lang_id} (fallback) + date DD/MM/YYYY",
                 "headers": {
                     "Ocp-Apim-Subscription-Key": self.api_key.strip(),
                     "Accept": "application/json",
