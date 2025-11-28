@@ -47,7 +47,27 @@ class MatchFetcher:
             return []
         
         today = datetime.now().strftime("%Y-%m-%d")
-        print(f"🔍 Fetching matches for {today} from API-Football...")
+        
+        # Determine current season - European leagues run Aug-May, so Nov 2024 = 2024-2025 season = season 2024
+        # But also check: free plans only support 2021-2023, so we need to use 2023 for free plans
+        current_year = datetime.now().year
+        current_month = datetime.now().month
+        
+        # For European leagues: if month is Aug-Dec, season = current year; if Jan-Jul, season = previous year
+        # But API free plan limitation: only 2021-2023 available
+        # Use 2023 as the latest available season for free plans
+        if current_month >= 8:  # Aug-Dec
+            season_year = current_year
+        else:  # Jan-Jul
+            season_year = current_year - 1
+        
+        # Free plan limitation: only 2021-2023
+        if season_year > 2023:
+            season_year = 2023
+            print(f"⚠️ Free plan detected: Using season 2023 (latest available for free plans)")
+            print(f"   Current date: {today}, Would use season: {season_year}")
+        
+        print(f"🔍 Fetching matches for {today} from API-Football (season: {season_year})...")
         
         # Default to top leagues if not specified, PLUS more leagues for days when big leagues don't play
         if not leagues:
@@ -97,7 +117,7 @@ class MatchFetcher:
                 params = {
                     "date": today,
                     "league": league_id,
-                    "season": datetime.now().year
+                    "season": season_year
                 }
                 
                 print(f"  📡 Fetching league {league_id} (date: {today})...")
