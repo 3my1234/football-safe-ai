@@ -304,6 +304,51 @@ async def get_raw_predictions(db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.get("/test-api")
+async def test_api_connection():
+    """Test API-Football connection directly"""
+    import requests
+    from datetime import datetime
+    
+    api_key = os.getenv("API_FOOTBALL_KEY", "")
+    if not api_key:
+        return {
+            "error": "API_FOOTBALL_KEY not set",
+            "api_key_set": False
+        }
+    
+    today = datetime.now().strftime("%Y-%m-%d")
+    url = "https://v3.football.api-sports.io/fixtures"
+    headers = {
+        "x-rapidapi-key": api_key,
+        "x-rapidapi-host": "v3.football.api-sports.io"
+    }
+    
+    # Test with Bundesliga (league 78) which should have matches today
+    params = {
+        "date": today,
+        "league": 78,  # Bundesliga
+        "season": datetime.now().year
+    }
+    
+    try:
+        response = requests.get(url, headers=headers, params=params, timeout=15)
+        return {
+            "status_code": response.status_code,
+            "url": url,
+            "params": params,
+            "headers_set": bool(headers.get("x-rapidapi-key")),
+            "response": response.json() if response.status_code == 200 else {"error": response.text[:500]},
+            "today": today
+        }
+    except Exception as e:
+        return {
+            "error": str(e),
+            "url": url,
+            "params": params
+        }
+
+
 @app.get("/matches/today")
 async def get_matches_today(db: Session = Depends(get_db)):
     """Get all matches being considered today"""
