@@ -90,6 +90,7 @@ class MatchFetcher:
         all_matches = []
         
         # Fetch matches from API-Football
+        api_errors = []
         for league_id in leagues:
             try:
                 url = f"{self.base_url}/fixtures"
@@ -99,30 +100,72 @@ class MatchFetcher:
                     "season": datetime.now().year
                 }
                 
-                print(f"  📡 Fetching league {league_id}...")
-                response = requests.get(url, headers=self.headers, params=params, timeout=10)
+                print(f"  📡 Fetching league {league_id} (date: {today})...")
+                response = requests.get(url, headers=self.headers, params=params, timeout=15)
                 
                 if response.status_code == 200:
                     data = response.json()
-                    fixtures = data.get("response", [])
-                    print(f"  ✅ League {league_id}: Found {len(fixtures)} fixtures")
+                    
+                    # Check API response structure
+                    if "errors" in data:
+                        error_msgs = data.get("errors", [])
+                        api_errors.append(f"League {league_id}: API errors - {error_msgs}")
+                        print(f"  ⚠️ League {league_id}: API returned errors: {error_msgs}")
+                        continue
+                    
+                    # Check if API rate limit info
+                    api_rate_limit = data.get("results", 0)
+                    if isinstance(data.get("response"), list):
+                        fixtures = data.get("response", [])
+                    else:
+                        fixtures = []
+                    
+                    print(f"  ✅ League {league_id}: Found {len(fixtures)} fixtures (API results: {api_rate_limit})")
                     
                     for fixture in fixtures:
                         match = self._parse_fixture(fixture)
                         if match:
                             all_matches.append(match)
+                        else:
+                            print(f"    ⚠️ Failed to parse fixture: {fixture.get('fixture', {}).get('id')}")
                 elif response.status_code == 403:
-                    print(f"  ❌ League {league_id}: 403 Forbidden - API key might be invalid or expired")
+                    error_msg = f"League {league_id}: 403 Forbidden - API key might be invalid or expired"
+                    api_errors.append(error_msg)
+                    print(f"  ❌ {error_msg}")
+                    print(f"    Response: {response.text[:200]}")
                 elif response.status_code == 429:
-                    print(f"  ⚠️ League {league_id}: 429 Too Many Requests - Rate limited")
+                    error_msg = f"League {league_id}: 429 Too Many Requests - Rate limited"
+                    api_errors.append(error_msg)
+                    print(f"  ⚠️ {error_msg}")
                 else:
-                    print(f"  ⚠️ League {league_id}: HTTP {response.status_code} - {response.text[:100]}")
+                    error_msg = f"League {league_id}: HTTP {response.status_code}"
+                    api_errors.append(f"{error_msg} - {response.text[:100]}")
+                    print(f"  ⚠️ {error_msg} - {response.text[:200]}")
                 
+            except requests.exceptions.Timeout:
+                error_msg = f"League {league_id}: Request timeout"
+                api_errors.append(error_msg)
+                print(f"  ❌ {error_msg}")
             except Exception as e:
+                import traceback
+                error_msg = f"League {league_id}: {str(e)}"
+                api_errors.append(error_msg)
                 print(f"  ❌ Error fetching league {league_id}: {e}")
+                print(f"    Traceback: {traceback.format_exc()}")
                 continue
         
+        if api_errors:
+            print(f"\n⚠️ API Errors encountered: {len(api_errors)} errors")
+            for err in api_errors[:5]:  # Show first 5 errors
+                print(f"  - {err}")
+        
         print(f"📊 Total matches fetched: {len(all_matches)}")
+        if len(all_matches) == 0 and api_errors:
+            print(f"⚠️ No matches found. Check API errors above. Possible issues:")
+            print(f"   - API rate limit exceeded")
+            print(f"   - Invalid API key")
+            print(f"   - No matches scheduled for {today}")
+            print(f"   - Wrong date format or timezone")
         
         # If no matches found, log the issue
         if not all_matches:
