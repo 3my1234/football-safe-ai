@@ -225,8 +225,8 @@ class MatchFetcher:
                         params=config['params'], 
                         timeout=15
                     )
-                
-                if response.status_code == 200:
+                    
+                    if response.status_code == 200:
                     data = response.json()
                     print(f"  ✅ Success! Endpoint: {endpoint}")
                     print(f"  ✅ Config that worked: {config['name']}")
@@ -271,13 +271,10 @@ class MatchFetcher:
                                     filtered_matches.append(match)
                         matches_data = filtered_matches if filtered_matches else matches_data
                     
-                    print(f"  ✅ Found {len(matches_data)} matches from Broadage for {today}")
-                    break  # Found working endpoint/config combination
-            
-            if matches_data:
-                break  # Found working endpoint, stop trying others
+                        print(f"  ✅ Found {len(matches_data)} matches from Broadage for {today}")
+                        break  # Found working endpoint/config combination
                         
-                elif response.status_code == 401:
+                    elif response.status_code == 401:
                     error_body = ""
                     try:
                         # Try JSON first
@@ -308,46 +305,47 @@ class MatchFetcher:
                         print(f"     ⚠️ languageId format issue detected")
                     if "ip" in error_lower or "whitelist" in error_lower:
                         print(f"     ⚠️ IP whitelist issue detected")
-                    if not error_body or error_body == "No response body":
-                        print(f"     ⚠️ Empty response - API might be rejecting request at gateway level")
-                    
-                    continue
-                    
-                elif response.status_code == 404:
-                    print(f"  ⚠️ 404 Not Found - {config['name']}")
-                    print(f"     This endpoint might not exist or requires different parameters")
-                    continue
-                    
-                elif response.status_code == 403:
+                        if not error_body or error_body == "No response body":
+                            print(f"     ⚠️ Empty response - API might be rejecting request at gateway level")
+                        
+                        continue
+                        
+                            print(f"  ⚠️ 404 Not Found - {config['name']}")
+                        print(f"     This endpoint might not exist or requires different parameters")
+                        continue
+                        
+                    elif response.status_code == 403:
                     error_body = ""
                     try:
                         error_body = response.text[:500] if response.text else "No response body"
                     except:
                         error_body = "Could not read response body"
                     
-                    error_msg = "403 Forbidden - IP not whitelisted"
-                    api_errors.append(error_msg)
-                    print(f"  ❌ {error_msg}")
-                    print(f"     Response: {error_body}")
-                    print(f"     💡 Add your server IP (84.54.23.80) to Broadage whitelist")
-                    break  # IP issue
-                    
-                else:
-                    error_body = ""
-                    try:
-                        error_body = response.text[:500] if response.text else "No response body"
-                    except:
-                        error_body = "Could not read response body"
-                    
-                    print(f"  ⚠️ HTTP {response.status_code} - {config['name']}")
-                    print(f"     Response: {error_body}")
+                        error_msg = "403 Forbidden - IP not whitelisted"
+                        api_errors.append(error_msg)
+                        print(f"  ❌ {error_msg}")
+                        print(f"     Response: {error_body}")
+                        print(f"     💡 Add your server IP (84.54.23.80) to Broadage whitelist")
+                        break  # IP issue
+                        
+                            error_body = ""
+                        try:
+                            error_body = response.text[:500] if response.text else "No response body"
+                        except:
+                            error_body = "Could not read response body"
+                        
+                        print(f"  ⚠️ HTTP {response.status_code} - {config['name']}")
+                        print(f"     Response: {error_body}")
+                        continue
+                        
+                except Exception as e:
+                    import traceback
+                    print(f"  ❌ Error with {endpoint} ({config['name']}): {e}")
+                    print(f"     Traceback: {traceback.format_exc()[:200]}")
                     continue
-                    
-            except Exception as e:
-                import traceback
-                print(f"  ❌ Error with {config['name']}: {e}")
-                print(f"     Traceback: {traceback.format_exc()[:200]}")
-                continue
+            
+            if matches_data:
+                break  # Found working endpoint, stop trying others
         
         # Parse matches if found
         if matches_data:
