@@ -178,60 +178,30 @@ class MatchFetcher:
             datetime.strptime(today, "%Y-%m-%d").strftime("%d/%m/%Y"),  # DD/MM/YYYY
         ]
         
-        # Based on error: "Language is invalid" - try different languageId values
-        # Docs say languageId is INT but HTTP headers are strings
-        # Try different valid language IDs (1=English might not be valid, try others)
-        # Also try date in DD/MM/YYYY format as shown in their examples
+        # Based on error: "Language is invalid" for languageId=1 and 0
+        # "Language Id is mandatory" - must include it
+        # Solution: Try languageId values 2, 3, 4, etc. until we find a valid one
+        # Trial subscriptions often only allow specific language IDs (not 1 or 0)
         today_dd_mm_yyyy = datetime.strptime(today, "%Y-%m-%d").strftime("%d/%m/%Y")
         
-        auth_configs = [
-            {
-                "name": "languageId=1 (English) + date DD/MM/YYYY",
+        # Try language IDs starting from 2 (1 and 0 are invalid)
+        # Limit to 10 attempts to avoid infinite loops
+        language_ids_to_try = [str(i) for i in range(2, 12)]  # 2, 3, 4, ..., 11
+        
+        auth_configs = []
+        for lang_id in language_ids_to_try:
+            auth_configs.append({
+                "name": f"languageId={lang_id} + date DD/MM/YYYY",
                 "headers": {
                     "Ocp-Apim-Subscription-Key": self.api_key.strip(),
                     "Accept": "application/json",
-                    "languageId": "1"
+                    "languageId": lang_id
                 },
                 "params": {"date": today_dd_mm_yyyy}
-            },
-            {
-                "name": "languageId=1 (English) + date YYYY-MM-DD",
-                "headers": {
-                    "Ocp-Apim-Subscription-Key": self.api_key.strip(),
-                    "Accept": "application/json",
-                    "languageId": "1"
-                },
-                "params": {"date": today}
-            },
-            {
-                "name": "languageId=1 (English) + no date",
-                "headers": {
-                    "Ocp-Apim-Subscription-Key": self.api_key.strip(),
-                    "Accept": "application/json",
-                    "languageId": "1"
-                },
-                "params": {}
-            },
-            {
-                "name": "Try languageId=0 (default/auto)",
-                "headers": {
-                    "Ocp-Apim-Subscription-Key": self.api_key.strip(),
-                    "Accept": "application/json",
-                    "languageId": "0"
-                },
-                "params": {"date": today_dd_mm_yyyy}
-            },
-            {
-                "name": "Try without languageId header",
-                "headers": {
-                    "Ocp-Apim-Subscription-Key": self.api_key.strip(),
-                    "Accept": "application/json"
-                },
-                "params": {"date": today_dd_mm_yyyy}
-            },
-        ]
+            })
         
         # Try each endpoint with authentication configs
+        # Stop immediately when we find a working languageId
         for endpoint in possible_endpoints:
             for config in auth_configs:
                 try:
@@ -293,6 +263,7 @@ class MatchFetcher:
                             matches_data = filtered_matches if filtered_matches else matches_data
                         
                         print(f"  ✅ Found {len(matches_data)} matches from Broadage for {today}")
+                        print(f"  🎉 Working languageId: {config['headers'].get('languageId')}")
                         break  # Found working endpoint/config combination
                         
                     elif response.status_code == 401:
