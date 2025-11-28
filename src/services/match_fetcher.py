@@ -24,18 +24,24 @@ class MatchFetcher:
         if self.use_broadage:
             self.api_key = os.getenv("BROADAGE_API_KEY", "")
             # Broadage API base URL - check their documentation for the correct host
-            # Common patterns: api.broadage.com, api.broadage.io, etc.
+            # The user's docs show {{host}} placeholder - check Broadage dashboard for actual URL
+            # Common patterns: api.broadage.com, {subscription}.azure-api.net, api.broadage.io, etc.
             self.base_url = os.getenv("BROADAGE_API_URL", "https://api.broadage.com")
             self.language_id = int(os.getenv("BROADAGE_LANGUAGE_ID", "1"))  # Default: English (1)
             
+            # Headers: Ocp-Apim-Subscription-Key is standard for Azure API Management
+            # languageId might need to be in headers OR params - trying headers first
             self.headers = {
                 "Ocp-Apim-Subscription-Key": self.api_key,
-                "languageId": str(self.language_id),
                 "Accept": "application/json"
             }
+            # languageId as header (if not working, we'll try as param)
+            self.language_id_header = str(self.language_id)
+            
             print("🌐 Using Broadage API")
             print(f"   Base URL: {self.base_url}")
             print(f"   Language ID: {self.language_id}")
+            print(f"   ⚠️  If connection fails, check Broadage dashboard for correct API host URL")
         else:
             self.api_key = os.getenv("API_FOOTBALL_KEY", "")
             self.base_url = "https://v3.football.api-sports.io"
@@ -159,14 +165,18 @@ class MatchFetcher:
         
         for endpoint_url in possible_endpoints:
             try:
+                # Try languageId as header first
+                headers_with_lang = {**self.headers, "languageId": self.language_id_header}
+                
                 params = {
                     "date": today,
                     # Add other params if needed based on docs
                 }
                 
                 print(f"  📡 Trying endpoint: {endpoint_url}")
+                print(f"     Headers: Ocp-Apim-Subscription-Key={self.api_key[:10]}..., languageId={self.language_id_header}")
                 print(f"     Params: date={today}")
-                response = requests.get(endpoint_url, headers=self.headers, params=params, timeout=15)
+                response = requests.get(endpoint_url, headers=headers_with_lang, params=params, timeout=15)
             
                 if response.status_code == 200:
                     data = response.json()

@@ -434,7 +434,8 @@ async def get_matches_today(db: Session = Depends(get_db)):
                 "api_key_preview": api_key_preview,
                 "fetched_at": datetime.now().isoformat(),
                 "today_date": datetime.now().strftime("%Y-%m-%d"),
-                "leagues_checked": len(match_fetcher.get_today_matches.__defaults__[0] if match_fetcher.get_today_matches.__defaults__ else [])
+                "using_broadage": match_fetcher.use_broadage if hasattr(match_fetcher, 'use_broadage') else False,
+                "base_url": match_fetcher.base_url if hasattr(match_fetcher, 'base_url') else "unknown"
             }
         }
     except Exception as e:
