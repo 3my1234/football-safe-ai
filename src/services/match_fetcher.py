@@ -7,7 +7,11 @@ import requests
 import os
 from datetime import datetime, timedelta
 from typing import Optional
-from src.services.odds_api_client import OddsAPIClient
+# OddsAPI client (optional - fallback if not available)
+try:
+    from src.services.odds_api_client import OddsAPIClient
+except ImportError:
+    OddsAPIClient = None
 
 
 class MatchFetcher:
@@ -20,8 +24,8 @@ class MatchFetcher:
             "x-rapidapi-key": self.api_key,
             "x-rapidapi-host": "v3.football.api-sports.io"
         }
-        # Initialize OddsAPI client
-        self.odds_client = OddsAPIClient()
+        # Initialize OddsAPI client (optional)
+        self.odds_client = OddsAPIClient() if OddsAPIClient else None
         # Cache odds for today's matches
         self._odds_cache = {}
         self._odds_fetched = False
@@ -142,6 +146,9 @@ class MatchFetcher:
     
     def _fetch_odds_for_matches(self, matches: List[Dict]):
         """Fetch odds from OddsAPI for all matches"""
+        if not self.odds_client:
+            print("⚠️ OddsAPI client not available. Using API-Football odds only.")
+            return
         if not self.odds_client.api_key:
             print("⚠️ OddsAPI key not set. Using API-Football odds only.")
             return
