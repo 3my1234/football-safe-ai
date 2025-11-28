@@ -227,100 +227,101 @@ class MatchFetcher:
                     )
                     
                     if response.status_code == 200:
-                    data = response.json()
-                    print(f"  ✅ Success! Endpoint: {endpoint}")
-                    print(f"  ✅ Config that worked: {config['name']}")
-                    print(f"  🔍 Response structure: {list(data.keys())[:5] if isinstance(data, dict) else 'Array'}...")
-                    
-                    # Parse Broadage response based on their API structure
-                    # Response could be array of matches or wrapped in object
-                    matches_data = []
-                    if isinstance(data, list):
-                        matches_data = data
-                    elif isinstance(data, dict):
-                        # Try common response formats
-                        matches_data = (
-                            data.get("data", []) or 
-                            data.get("matches", []) or 
-                            data.get("results", []) or
-                            data.get("response", []) or
-                            data.get("list", []) or
-                            []
-                        )
-                    
-                    # Filter by date if matches returned
-                    if matches_data:
-                        filtered_matches = []
-                        for match in matches_data:
-                            match_date = match.get("date") or match.get("matchDate") or match.get("startDate")
-                            if match_date:
-                                # Parse date format and check if it's today
-                                try:
-                                    # Broadage date format: "10/08/2018 19:00:00" or ISO format
-                                    if "/" in str(match_date):
-                                        # Format: DD/MM/YYYY HH:MM:SS
-                                        date_part = str(match_date).split()[0]
-                                        parsed_date = datetime.strptime(date_part, "%d/%m/%Y")
-                                    else:
-                                        parsed_date = datetime.fromisoformat(str(match_date).replace("Z", "+00:00"))
-                                    
-                                    if parsed_date.date() == datetime.strptime(today, "%Y-%m-%d").date():
+                        data = response.json()
+                        print(f"  ✅ Success! Endpoint: {endpoint}")
+                        print(f"  ✅ Config that worked: {config['name']}")
+                        print(f"  🔍 Response structure: {list(data.keys())[:5] if isinstance(data, dict) else 'Array'}...")
+                        
+                        # Parse Broadage response based on their API structure
+                        # Response could be array of matches or wrapped in object
+                        matches_data = []
+                        if isinstance(data, list):
+                            matches_data = data
+                        elif isinstance(data, dict):
+                            # Try common response formats
+                            matches_data = (
+                                data.get("data", []) or 
+                                data.get("matches", []) or 
+                                data.get("results", []) or
+                                data.get("response", []) or
+                                data.get("list", []) or
+                                []
+                            )
+                        
+                        # Filter by date if matches returned
+                        if matches_data:
+                            filtered_matches = []
+                            for match in matches_data:
+                                match_date = match.get("date") or match.get("matchDate") or match.get("startDate")
+                                if match_date:
+                                    # Parse date format and check if it's today
+                                    try:
+                                        # Broadage date format: "10/08/2018 19:00:00" or ISO format
+                                        if "/" in str(match_date):
+                                            # Format: DD/MM/YYYY HH:MM:SS
+                                            date_part = str(match_date).split()[0]
+                                            parsed_date = datetime.strptime(date_part, "%d/%m/%Y")
+                                        else:
+                                            parsed_date = datetime.fromisoformat(str(match_date).replace("Z", "+00:00"))
+                                        
+                                        if parsed_date.date() == datetime.strptime(today, "%Y-%m-%d").date():
+                                            filtered_matches.append(match)
+                                    except:
+                                        # If date parsing fails, include the match (might be today)
                                         filtered_matches.append(match)
-                                except:
-                                    # If date parsing fails, include the match (might be today)
-                                    filtered_matches.append(match)
-                        matches_data = filtered_matches if filtered_matches else matches_data
-                    
+                            matches_data = filtered_matches if filtered_matches else matches_data
+                        
                         print(f"  ✅ Found {len(matches_data)} matches from Broadage for {today}")
                         break  # Found working endpoint/config combination
                         
                     elif response.status_code == 401:
-                    error_body = ""
-                    try:
-                        # Try JSON first
+                        error_body = ""
                         try:
-                            error_json = response.json()
-                            error_body = str(error_json)
+                            # Try JSON first
+                            try:
+                                error_json = response.json()
+                                error_body = str(error_json)
+                            except:
+                                error_body = response.text[:1000] if response.text else "No response body"
                         except:
-                            error_body = response.text[:1000] if response.text else "No response body"
-                    except:
-                        error_body = "Could not read response body"
-                    
-                    # Check response headers for error details
-                    response_headers = dict(response.headers)
-                    
-                    error_msg = f"401 Unauthorized - {config['name']}"
-                    api_errors.append(error_msg)
-                    print(f"  ❌ {error_msg}")
-                    print(f"     Response body: {error_body}")
-                    print(f"     Response headers: {response_headers}")
-                    print(f"     Request headers sent: {config['headers']}")
-                    print(f"     API key preview: {self.api_key[:15]}... (length: {len(self.api_key)})")
-                    
-                    # Check for specific error indicators
-                    error_lower = error_body.lower()
-                    if "subscription" in error_lower or "key" in error_lower:
-                        print(f"     ⚠️ API key authentication issue detected")
-                    if "language" in error_lower:
-                        print(f"     ⚠️ languageId format issue detected")
-                    if "ip" in error_lower or "whitelist" in error_lower:
-                        print(f"     ⚠️ IP whitelist issue detected")
+                            error_body = "Could not read response body"
+                        
+                        # Check response headers for error details
+                        response_headers = dict(response.headers)
+                        
+                        error_msg = f"401 Unauthorized - {config['name']}"
+                        api_errors.append(error_msg)
+                        print(f"  ❌ {error_msg}")
+                        print(f"     Response body: {error_body}")
+                        print(f"     Response headers: {response_headers}")
+                        print(f"     Request headers sent: {config['headers']}")
+                        print(f"     API key preview: {self.api_key[:15]}... (length: {len(self.api_key)})")
+                        
+                        # Check for specific error indicators
+                        error_lower = error_body.lower()
+                        if "subscription" in error_lower or "key" in error_lower:
+                            print(f"     ⚠️ API key authentication issue detected")
+                        if "language" in error_lower:
+                            print(f"     ⚠️ languageId format issue detected")
+                        if "ip" in error_lower or "whitelist" in error_lower:
+                            print(f"     ⚠️ IP whitelist issue detected")
                         if not error_body or error_body == "No response body":
                             print(f"     ⚠️ Empty response - API might be rejecting request at gateway level")
                         
                         continue
                         
-                            print(f"  ⚠️ 404 Not Found - {config['name']}")
+                    elif response.status_code == 404:
+                        print(f"  ⚠️ 404 Not Found - {config['name']}")
                         print(f"     This endpoint might not exist or requires different parameters")
                         continue
                         
                     elif response.status_code == 403:
-                    error_body = ""
-                    try:
-                        error_body = response.text[:500] if response.text else "No response body"
-                    except:
-                        error_body = "Could not read response body"
-                    
+                        error_body = ""
+                        try:
+                            error_body = response.text[:500] if response.text else "No response body"
+                        except:
+                            error_body = "Could not read response body"
+                        
                         error_msg = "403 Forbidden - IP not whitelisted"
                         api_errors.append(error_msg)
                         print(f"  ❌ {error_msg}")
@@ -328,7 +329,8 @@ class MatchFetcher:
                         print(f"     💡 Add your server IP (84.54.23.80) to Broadage whitelist")
                         break  # IP issue
                         
-                            error_body = ""
+                    else:
+                        error_body = ""
                         try:
                             error_body = response.text[:500] if response.text else "No response body"
                         except:
