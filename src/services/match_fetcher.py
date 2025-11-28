@@ -23,12 +23,19 @@ class MatchFetcher:
         
         if self.use_broadage:
             self.api_key = os.getenv("BROADAGE_API_KEY", "")
-            self.base_url = os.getenv("BROADAGE_API_URL", "https://api.broadage.com/v1")
+            # Broadage API base URL - check their documentation for the correct host
+            # Common patterns: api.broadage.com, api.broadage.io, etc.
+            self.base_url = os.getenv("BROADAGE_API_URL", "https://api.broadage.com")
+            self.language_id = int(os.getenv("BROADAGE_LANGUAGE_ID", "1"))  # Default: English (1)
+            
             self.headers = {
-                "X-API-Key": self.api_key,
-                "Content-Type": "application/json"
+                "Ocp-Apim-Subscription-Key": self.api_key,
+                "languageId": str(self.language_id),
+                "Accept": "application/json"
             }
             print("🌐 Using Broadage API")
+            print(f"   Base URL: {self.base_url}")
+            print(f"   Language ID: {self.language_id}")
         else:
             self.api_key = os.getenv("API_FOOTBALL_KEY", "")
             self.base_url = "https://v3.football.api-sports.io"
@@ -131,47 +138,88 @@ class MatchFetcher:
         api_errors = []
         all_matches = []
         
-        # Broadage API endpoints - adjust based on their actual documentation
-        # Try common endpoint patterns
-        url = f"{self.base_url}/football/matches"  # Common pattern
+        # Broadage API endpoints - based on their documentation structure
+        # Soccer/Football sport ID is 1 (from their docs)
+        # Try common endpoint patterns for matches/fixtures
+        # Common patterns: /soccer/match/list, /football/match/list, /global/match/list, etc.
         
         print(f"📡 Fetching matches from Broadage API for {today}...")
         
-        # Try fetching all matches for today first (might not need league filter)
-        try:
-            params = {
-                "date": today
-            }
+        # Try multiple possible endpoint patterns
+        possible_endpoints = [
+            f"{self.base_url}/soccer/match/list",  # Most likely
+            f"{self.base_url}/football/match/list",
+            f"{self.base_url}/global/match/list",
+            f"{self.base_url}/soccer/match",
+            f"{self.base_url}/football/fixtures",
+        ]
+        
+        matches_data = []
+        api_errors = []
+        
+        for endpoint_url in possible_endpoints:
+            try:
+                params = {
+                    "date": today,
+                    # Add other params if needed based on docs
+                }
+                
+                print(f"  📡 Trying endpoint: {endpoint_url}")
+                print(f"     Params: date={today}")
+                response = requests.get(endpoint_url, headers=self.headers, params=params, timeout=15)
             
-            print(f"  📡 Fetching all matches for {today}...")
-            response = requests.get(url, headers=self.headers, params=params, timeout=15)
-            
-            if response.status_code == 200:
-                data = response.json()
-                print(f"  🔍 Broadage API response structure: {list(data.keys())[:5]}...")
-                
-                # Parse Broadage response - try multiple possible formats
-                matches_data = (
-                    data.get("data", []) or 
-                    data.get("matches", []) or 
-                    data.get("results", []) or
-                    data.get("response", []) or
-                    (data if isinstance(data, list) else [])
-                )
-                
-                print(f"  ✅ Found {len(matches_data)} matches from Broadage")
-                
-                for match_data in matches_data:
-                    # Filter by leagues if specified and if league info is available
-                    match_league_id = match_data.get("league", {}).get("id") or match_data.get("leagueId")
-                    if leagues and match_league_id and match_league_id not in leagues:
-                        continue
+                if response.status_code == 200:
+                    data = response.json()
+                    print(f"  ✅ Success! Endpoint works: {endpoint_url}")
+                    print(f"  🔍 Response structure: {list(data.keys())[:5] if isinstance(data, dict) else 'Array'}...")
                     
-                    match = self._parse_broadage_fixture(match_data)
-                    if match:
-                        all_matches.append(match)
+                    # Parse Broadage response - try multiple possible formats
+                    matches_data = (
+                        data.get("data", []) or 
+                        data.get("matches", []) or 
+                        data.get("results", []) or
+                        data.get("response", []) or
+                        data.get("list", []) or
+                        (data if isinstance(data, list) else [])
+                    )
+                    
+                    print(f"  ✅ Found {len(matches_data)} matches from Broadage")
+                    break  # Found working endpoint, stop trying others
+                    
+                elif response.status_code == 401:
+                    error_msg = "401 Unauthorized - Check API key"
+                    api_errors.append(error_msg)
+                    print(f"  ❌ {error_msg} - Trying next endpoint...")
+                    continue
+                elif response.status_code == 404:
+                    print(f"  ⚠️ 404 Not Found - Trying next endpoint...")
+                    continue
+                elif response.status_code == 403:
+                    error_msg = "403 Forbidden - IP not whitelisted"
+                    api_errors.append(error_msg)
+                    print(f"  ❌ {error_msg}")
+                    break  # IP issue, won't work on other endpoints either
+                else:
+                    print(f"  ⚠️ HTTP {response.status_code} - Trying next endpoint...")
+                    continue
+                    
+            except Exception as e:
+                print(f"  ⚠️ Error with {endpoint_url}: {e} - Trying next...")
+                continue
+        
+        # Parse matches if found
+        if matches_data:
+            for match_data in matches_data:
+                # Filter by leagues if specified and if league info is available
+                match_league_id = match_data.get("league", {}).get("id") or match_data.get("leagueId") or match_data.get("league_id")
+                if leagues and match_league_id and match_league_id not in leagues:
+                    continue
+                
+                match = self._parse_broadage_fixture(match_data)
+                if match:
+                    all_matches.append(match)
                         
-            elif response.status_code == 401:
+        if response.status_code == 403:
                 error_msg = "401 Unauthorized - Check API key and IP whitelist in Broadage dashboard"
                 api_errors.append(error_msg)
                 print(f"  ❌ {error_msg}")
