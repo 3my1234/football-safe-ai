@@ -161,13 +161,14 @@ class MatchFetcher:
         matches_data = []
         api_errors = []
         
-        # Try different endpoint variations (case-sensitive, different formats)
+        # Try exact endpoint paths from Broadage docs (case-sensitive)
+        # Based on error: /soccer/match/list exists but returns "Language is invalid"
+        # Try the exact paths from documentation
         possible_endpoints = [
-            f"{self.base_url}/soccer/MatchList/All",  # Case-sensitive version
-            f"{self.base_url}/soccer/match/list/all",
+            f"{self.base_url}/soccer/MatchList/All",  # Exact case from docs
             f"{self.base_url}/soccer/MatchList/Scheduled",  # For scheduled matches
-            f"{self.base_url}/soccer/match/list",
-            f"{self.base_url}/soccer/matchList/all",
+            f"{self.base_url}/soccer/MatchList/Live",  # Live matches
+            f"{self.base_url}/soccer/match/list",  # Lowercase version (exists but language issue)
         ]
         
         # Try date parameter variations (Broadage might use different date formats)
@@ -177,36 +178,56 @@ class MatchFetcher:
             datetime.strptime(today, "%Y-%m-%d").strftime("%d/%m/%Y"),  # DD/MM/YYYY
         ]
         
-        # Based on docs: languageId must be INT in headers (Required)
-        # Ocp-Apim-Subscription-Key already in self.headers
-        # Try different languageId formats (as string or ensure it's numeric)
+        # Based on error: "Language is invalid" - try different languageId values
+        # Docs say languageId is INT but HTTP headers are strings
+        # Try different valid language IDs (1=English might not be valid, try others)
+        # Also try date in DD/MM/YYYY format as shown in their examples
+        today_dd_mm_yyyy = datetime.strptime(today, "%Y-%m-%d").strftime("%d/%m/%Y")
+        
         auth_configs = [
             {
-                "name": "languageId as string header + date param",
+                "name": "languageId=1 (English) + date DD/MM/YYYY",
                 "headers": {
-                    "Ocp-Apim-Subscription-Key": self.api_key,
+                    "Ocp-Apim-Subscription-Key": self.api_key.strip(),
                     "Accept": "application/json",
-                    "languageId": str(self.language_id)
+                    "languageId": "1"
                 },
-                "params": {"date": today}
+                "params": {"date": today_dd_mm_yyyy}
             },
             {
-                "name": "languageId as numeric string + no date",
+                "name": "languageId=1 (English) + date YYYY-MM-DD",
                 "headers": {
-                    "Ocp-Apim-Subscription-Key": self.api_key,
-                    "Accept": "application/json",
-                    "languageId": "1"  # Explicit numeric string
-                },
-                "params": {}
-            },
-            {
-                "name": "Verify API key format - exact headers from docs",
-                "headers": {
-                    "Ocp-Apim-Subscription-Key": self.api_key.strip(),  # Remove any whitespace
+                    "Ocp-Apim-Subscription-Key": self.api_key.strip(),
                     "Accept": "application/json",
                     "languageId": "1"
                 },
                 "params": {"date": today}
+            },
+            {
+                "name": "languageId=1 (English) + no date",
+                "headers": {
+                    "Ocp-Apim-Subscription-Key": self.api_key.strip(),
+                    "Accept": "application/json",
+                    "languageId": "1"
+                },
+                "params": {}
+            },
+            {
+                "name": "Try languageId=0 (default/auto)",
+                "headers": {
+                    "Ocp-Apim-Subscription-Key": self.api_key.strip(),
+                    "Accept": "application/json",
+                    "languageId": "0"
+                },
+                "params": {"date": today_dd_mm_yyyy}
+            },
+            {
+                "name": "Try without languageId header",
+                "headers": {
+                    "Ocp-Apim-Subscription-Key": self.api_key.strip(),
+                    "Accept": "application/json"
+                },
+                "params": {"date": today_dd_mm_yyyy}
             },
         ]
         
