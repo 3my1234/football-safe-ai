@@ -41,10 +41,13 @@ class MatchFetcher:
             List of match dictionaries with real odds
         """
         if not self.api_key:
-            # Return sample data for testing
-            return self._get_sample_matches()
+            print("⚠️ API_FOOTBALL_KEY not set! Cannot fetch real matches.")
+            print("   Please set API_FOOTBALL_KEY environment variable in Coolify")
+            # Don't return sample matches - return empty so user knows there's a problem
+            return []
         
         today = datetime.now().strftime("%Y-%m-%d")
+        print(f"🔍 Fetching matches for {today} from API-Football...")
         
         # Default to top leagues if not specified, PLUS more leagues for days when big leagues don't play
         if not leagues:
@@ -96,25 +99,40 @@ class MatchFetcher:
                     "season": datetime.now().year
                 }
                 
+                print(f"  📡 Fetching league {league_id}...")
                 response = requests.get(url, headers=self.headers, params=params, timeout=10)
                 
                 if response.status_code == 200:
                     data = response.json()
                     fixtures = data.get("response", [])
+                    print(f"  ✅ League {league_id}: Found {len(fixtures)} fixtures")
                     
                     for fixture in fixtures:
                         match = self._parse_fixture(fixture)
                         if match:
                             all_matches.append(match)
+                elif response.status_code == 403:
+                    print(f"  ❌ League {league_id}: 403 Forbidden - API key might be invalid or expired")
+                elif response.status_code == 429:
+                    print(f"  ⚠️ League {league_id}: 429 Too Many Requests - Rate limited")
+                else:
+                    print(f"  ⚠️ League {league_id}: HTTP {response.status_code} - {response.text[:100]}")
                 
             except Exception as e:
-                print(f"Error fetching league {league_id}: {e}")
+                print(f"  ❌ Error fetching league {league_id}: {e}")
                 continue
         
-        # If no matches found, use sample matches as fallback
+        print(f"📊 Total matches fetched: {len(all_matches)}")
+        
+        # If no matches found, log the issue
         if not all_matches:
-            print("⚠️ No matches found from API-Football. Using sample matches as fallback.")
-            all_matches = self._get_sample_matches()
+            print("⚠️ No matches found from API-Football!")
+            print("   Possible reasons:")
+            print("   1. API_FOOTBALL_KEY not set or invalid")
+            print("   2. No matches scheduled today")
+            print("   3. API rate limit exceeded")
+            print("   4. League IDs not valid")
+            # Don't return sample matches - return empty so it's clear there's an issue
         
         # Enrich with real odds from OddsAPI
         if all_matches and not self._odds_fetched:
@@ -318,23 +336,29 @@ class MatchFetcher:
                     'goals_scored_5': 12,
                     'goals_conceded_5': 3,
                     'form_percentage': 0.85,
-                    'shots_on_target_avg': 6.0
+                    'shots_on_target_avg': 6.0,
+                    'goals_variance': 5.0
                 },
                 'away_form': {
                     'goals_scored_5': 4,
                     'goals_conceded_5': 8,
                     'form_percentage': 0.3,
-                    'shots_on_target_avg': 3.0
+                    'shots_on_target_avg': 3.0,
+                    'goals_variance': 6.0
                 },
                 'home_xg': 2.1,
                 'away_xg': 0.8,
                 'home_position': 3,
                 'away_position': 20,
+                'league_size': 20,
                 'table_gap': 17,
-                'pressure_index': 0.6,
+                'pressure_index': 0.4,
                 'is_derby': False,
                 'is_must_win': False,
-                'fixture_congestion': 7
+                'key_player_missing': False,
+                'fixture_congestion': 7,
+                'home_fixture_congestion': 7,
+                'away_fixture_congestion': 7
             },
             {
                 'id': '2',
@@ -350,23 +374,29 @@ class MatchFetcher:
                     'goals_scored_5': 15,
                     'goals_conceded_5': 2,
                     'form_percentage': 0.9,
-                    'shots_on_target_avg': 7.0
+                    'shots_on_target_avg': 7.0,
+                    'goals_variance': 4.0
                 },
                 'away_form': {
                     'goals_scored_5': 10,
                     'goals_conceded_5': 7,
                     'form_percentage': 0.6,
-                    'shots_on_target_avg': 5.0
+                    'shots_on_target_avg': 5.0,
+                    'goals_variance': 5.5
                 },
                 'home_xg': 2.5,
                 'away_xg': 1.3,
                 'home_position': 1,
                 'away_position': 8,
+                'league_size': 20,
                 'table_gap': 7,
                 'pressure_index': 0.4,
                 'is_derby': False,
                 'is_must_win': False,
-                'fixture_congestion': 7
+                'key_player_missing': False,
+                'fixture_congestion': 7,
+                'home_fixture_congestion': 7,
+                'away_fixture_congestion': 7
             }
         ]
 
