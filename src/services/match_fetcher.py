@@ -218,29 +218,6 @@ class MatchFetcher:
                 match = self._parse_broadage_fixture(match_data)
                 if match:
                     all_matches.append(match)
-                        
-        if response.status_code == 403:
-                error_msg = "401 Unauthorized - Check API key and IP whitelist in Broadage dashboard"
-                api_errors.append(error_msg)
-                print(f"  ❌ {error_msg}")
-                print(f"  💡 Make sure your Coolify VPS IP is whitelisted in Broadage")
-            elif response.status_code == 403:
-                error_msg = "403 Forbidden - IP not whitelisted or invalid key"
-                api_errors.append(error_msg)
-                print(f"  ❌ {error_msg}")
-                print(f"  💡 Add your server's public IP to Broadage whitelist")
-            else:
-                error_msg = f"HTTP {response.status_code}"
-                api_errors.append(f"{error_msg} - {response.text[:200]}")
-                print(f"  ⚠️ {error_msg}")
-                print(f"  Response: {response.text[:500]}")
-                
-        except Exception as e:
-            import traceback
-            error_msg = f"Error fetching from Broadage: {str(e)}"
-            api_errors.append(error_msg)
-            print(f"  ❌ {error_msg}")
-            print(f"  Traceback: {traceback.format_exc()}")
         
         if api_errors:
             print(f"\n⚠️ Broadage API Errors: {len(api_errors)} errors")
