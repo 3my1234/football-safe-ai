@@ -47,27 +47,18 @@ class MatchFetcher:
             return []
         
         today = datetime.now().strftime("%Y-%m-%d")
-        
-        # Determine current season - European leagues run Aug-May, so Nov 2024 = 2024-2025 season = season 2024
-        # But also check: free plans only support 2021-2023, so we need to use 2023 for free plans
         current_year = datetime.now().year
         current_month = datetime.now().month
         
-        # For European leagues: if month is Aug-Dec, season = current year; if Jan-Jul, season = previous year
-        # But API free plan limitation: only 2021-2023 available
-        # Use 2023 as the latest available season for free plans
+        # Determine current season - European leagues run Aug-May
+        # If month is Aug-Dec, season = current year; if Jan-Jul, season = previous year
         if current_month >= 8:  # Aug-Dec
             season_year = current_year
         else:  # Jan-Jul
             season_year = current_year - 1
         
-        # Free plan limitation: only 2021-2023
-        if season_year > 2023:
-            season_year = 2023
-            print(f"⚠️ Free plan detected: Using season 2023 (latest available for free plans)")
-            print(f"   Current date: {today}, Would use season: {season_year}")
-        
         print(f"🔍 Fetching matches for {today} from API-Football (season: {season_year})...")
+        print(f"   Current date: {today}, Season year: {season_year}")
         
         # Default to top leagues if not specified, PLUS more leagues for days when big leagues don't play
         if not leagues:
@@ -127,11 +118,41 @@ class MatchFetcher:
                     data = response.json()
                     
                     # Check API response structure
-                    if "errors" in data:
-                        error_msgs = data.get("errors", [])
-                        api_errors.append(f"League {league_id}: API errors - {error_msgs}")
-                        print(f"  ⚠️ League {league_id}: API returned errors: {error_msgs}")
-                        continue
+                    if "errors" in data and data["errors"]:
+                        error_msgs = data.get("errors", {})
+                        # If error mentions free plan limitation, try with 2024 season
+                        if isinstance(error_msgs, dict) and 'plan' in str(error_msgs):
+                            error_text = str(error_msgs.get('plan', ''))
+                            if 'Free plans' in error_text and '2021 to 2023' in error_text:
+                                print(f"  ⚠️ League {league_id}: Free plan limitation detected")
+                                print(f"     Trying with season 2024 (current season)...")
+                                # Retry with 2024 season (current season)
+                                params_2024 = {
+                                    "date": today,
+                                    "league": league_id,
+                                    "season": 2024
+                                }
+                                try:
+                                    response_2024 = requests.get(url, headers=headers, params=params_2024, timeout=15)
+                                    if response_2024.status_code == 200:
+                                        data_2024 = response_2024.json()
+                                        if not (data_2024.get("errors") and data_2024["errors"]):
+                                            data = data_2024
+                                            print(f"  ✅ League {league_id}: Successfully fetched with season 2024!")
+                                        else:
+                                            api_errors.append(f"League {league_id}: Free plan - no access to current season")
+                                            print(f"  ❌ League {league_id}: Free plan cannot access current season data")
+                                            continue
+                                    else:
+                                        api_errors.append(f"League {league_id}: HTTP {response_2024.status_code}")
+                                        continue
+                                except:
+                                    pass
+                        
+                        if "errors" in data and data["errors"]:
+                            api_errors.append(f"League {league_id}: API errors - {error_msgs}")
+                            print(f"  ⚠️ League {league_id}: API returned errors: {error_msgs}")
+                            continue
                     
                     # Check if API rate limit info
                     api_rate_limit = data.get("results", 0)
