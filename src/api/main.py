@@ -197,14 +197,17 @@ async def get_safe_picks_today(db: Session = Depends(get_db)):
         # Fetch today's matches
         matches = match_fetcher.get_today_matches()
         print(f"📊 Fetched {len(matches)} matches from match fetcher")
+        print(f"🔑 API Key status: {'SET' if match_fetcher.api_key else 'NOT SET'}")
         
         if not matches:
-            print("⚠️ No matches found. Returning empty response.")
+            api_status = "NOT SET" if not match_fetcher.api_key else "SET (but no matches found)"
+            reason_msg = f"No matches available today. API Key: {api_status}"
+            print(f"⚠️ No matches found. Reason: {reason_msg}")
             return SafePicksResponse(
                 combo_odds=None,
                 games_used=0,
                 picks=[],
-                reason="No matches available today",
+                reason=reason_msg,
                 confidence=0.0
             )
         
@@ -306,6 +309,11 @@ async def get_matches_today(db: Session = Depends(get_db)):
     """Get all matches being considered today"""
     try:
         matches = match_fetcher.get_today_matches()
+        
+        # Diagnostic info
+        api_key_set = bool(match_fetcher.api_key)
+        api_key_preview = match_fetcher.api_key[:10] + "..." if match_fetcher.api_key else "NOT SET"
+        
         return {
             "matches": [
                 {
@@ -313,14 +321,24 @@ async def get_matches_today(db: Session = Depends(get_db)):
                     "home_team": m.get('home_team'),
                     "away_team": m.get('away_team'),
                     "league": m.get('league'),
+                    "league_tier": m.get('league_tier'),
+                    "home_odds": m.get('home_odds'),
                     "match_date": m.get('match_date').isoformat() if m.get('match_date') else None
                 }
                 for m in matches
             ],
-            "count": len(matches)
+            "count": len(matches),
+            "diagnostic": {
+                "api_key_set": api_key_set,
+                "api_key_preview": api_key_preview,
+                "fetched_at": datetime.now().isoformat()
+            }
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        import traceback
+        error_details = traceback.format_exc()
+        print(f"❌ Error in get_matches_today: {error_details}")
+        raise HTTPException(status_code=500, detail=f"{str(e)}\n\nDetails: {error_details}")
 
 
 @app.post("/admin/approve")
