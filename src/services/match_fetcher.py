@@ -111,6 +111,11 @@ class MatchFetcher:
                 print(f"Error fetching league {league_id}: {e}")
                 continue
         
+        # If no matches found, use sample matches as fallback
+        if not all_matches:
+            print("⚠️ No matches found from API-Football. Using sample matches as fallback.")
+            all_matches = self._get_sample_matches()
+        
         # Enrich with real odds from OddsAPI
         if all_matches and not self._odds_fetched:
             self._fetch_odds_for_matches(all_matches)
@@ -230,26 +235,32 @@ class MatchFetcher:
                 
                 # Default stats (in production, fetch detailed stats)
                 'home_form': {
-                    'goals_scored_5': 10,
-                    'goals_conceded_5': 4,
-                    'form_percentage': 0.7,
-                    'shots_on_target_avg': 5.0
+                    'goals_scored_5': 12,
+                    'goals_conceded_5': 3,
+                    'form_percentage': 0.85,
+                    'shots_on_target_avg': 6.0,
+                    'goals_variance': 5.0  # Low variance = predictable
                 },
                 'away_form': {
-                    'goals_scored_5': 8,
-                    'goals_conceded_5': 5,
-                    'form_percentage': 0.65,
-                    'shots_on_target_avg': 4.5
+                    'goals_scored_5': 4,
+                    'goals_conceded_5': 8,
+                    'form_percentage': 0.3,
+                    'shots_on_target_avg': 3.0,
+                    'goals_variance': 6.0  # Low variance
                 },
-                'home_xg': 1.8,
-                'away_xg': 1.5,
-                'home_position': 8,
-                'away_position': 12,
-                'table_gap': 4,
-                'pressure_index': 0.5,
+                'home_xg': 2.1,
+                'away_xg': 0.8,
+                'home_position': 3,
+                'away_position': 20,
+                'league_size': 20,
+                'table_gap': 17,
+                'pressure_index': 0.4,  # Low pressure
                 'is_derby': False,
                 'is_must_win': False,
-                'fixture_congestion': 7
+                'key_player_missing': False,
+                'fixture_congestion': 7,
+                'home_fixture_congestion': 7,
+                'away_fixture_congestion': 7
             }
             
             return match

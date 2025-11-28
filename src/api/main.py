@@ -196,8 +196,10 @@ async def get_safe_picks_today(db: Session = Depends(get_db)):
     try:
         # Fetch today's matches
         matches = match_fetcher.get_today_matches()
+        print(f"📊 Fetched {len(matches)} matches from match fetcher")
         
         if not matches:
+            print("⚠️ No matches found. Returning empty response.")
             return SafePicksResponse(
                 combo_odds=None,
                 games_used=0,
@@ -205,6 +207,8 @@ async def get_safe_picks_today(db: Session = Depends(get_db)):
                 reason="No matches available today",
                 confidence=0.0
             )
+        
+        print(f"✅ Processing {len(matches)} matches for safe picks")
         
         # Save matches to database
         for match_data in matches:
