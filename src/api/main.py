@@ -308,6 +308,7 @@ async def get_raw_predictions(db: Session = Depends(get_db)):
 async def test_api_connection():
     """Test API-Football connection directly"""
     import requests
+    import os
     from datetime import datetime
     
     api_key = os.getenv("API_FOOTBALL_KEY", "")
