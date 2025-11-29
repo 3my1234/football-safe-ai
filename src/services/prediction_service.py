@@ -222,20 +222,32 @@ class PredictionService:
         """
         Estimate odds from probability (fallback when real odds not available)
         
-        Formula: odds ≈ 1 / probability
-        But add margin for bookmaker profit
+        For safe markets (high probability), ensure odds are in 1.02-1.05 range
         """
         if probability <= 0:
             return 100.0
         if probability >= 1:
-            return 1.01
+            return 1.02
         
-        # Convert probability to odds with 5% margin
+        # Convert probability to fair odds
         implied_odds = 1.0 / probability
-        bookmaker_odds = implied_odds * 0.95
+        
+        # For very safe markets (probability >= 0.95), use fixed safe odds in 1.02-1.05 range
+        if probability >= 0.95:
+            # Map 0.95-1.0 probability to 1.05-1.02 odds range
+            # Higher probability = lower (safer) odds
+            odds_range = 1.05 - 1.02  # 0.03
+            prob_range = 1.0 - 0.95   # 0.05
+            odds = 1.05 - ((probability - 0.95) / prob_range) * odds_range
+            return round(max(min(odds, 1.05), 1.02), 3)
+        
+        # For less safe markets, use standard calculation with margin
+        # Bookmaker applies margin by offering slightly lower odds
+        margin = 0.05  # 5% margin
+        bookmaker_odds = implied_odds * (1 - margin)
         
         # Cap at reasonable range
-        return round(min(max(bookmaker_odds, 1.01), 50.0), 2)
+        return round(min(max(bookmaker_odds, 1.01), 50.0), 3)
     
     def get_raw_predictions(self, matches: List[Dict]) -> List[Dict]:
         """Get raw ML predictions before filtering"""
