@@ -146,39 +146,98 @@ async def get_safe_picks_today(db: Session = Depends(get_db)):
                 # Use simple fallback predictions - SIMPLIFIED to ensure picks are generated
                 raw_predictions = []
                 matches_checked = 0
-                matches_filtered_out = 0
+                import sys
                 
-                # SIMPLIFIED: Don't filter matches, just analyze them all
-                for match in matches:
-                    matches_checked += 1
-                    print(f"  🔍 Processing match: {match.get('home_team')} vs {match.get('away_team')}")
+                try:
+                    print(f"  🔍 FallbackPredictionService.generate_predictions called with {len(matches)} matches")
+                    sys.stdout.flush()
                     
-                    # Get safe markets for this match
-                    markets = self.simulator.get_recommended_markets(match)
-                    print(f"    📋 Recommended markets: {markets}")
+                    if not matches:
+                        print(f"  ⚠️ No matches provided to generate_predictions")
+                        sys.stdout.flush()
+                        return {
+                            'combo_odds': None,
+                            'games_used': 0,
+                            'picks': [],
+                            'reason': 'No matches provided',
+                            'confidence': 0.0
+                        }
                     
-                    # Generate predictions for each safe market
-                    for market_type in markets[:2]:  # Limit to top 2 markets per match
-                        # Conservative fallback probability (96% = very safe)
-                        base_prob = 0.96
-                        worst_case = self.simulator.test_all_scenarios(match, market_type, base_prob)
-                        odds = self._get_odds_for_market(match, market_type, base_prob)
-                        
-                        # Only add if odds are in our target range
-                        if self.filter.min_odds <= odds <= self.filter.max_odds:
-                            raw_predictions.append({
-                                'match_id': match.get('id'),
-                                'home_team': match.get('home_team'),
-                                'away_team': match.get('away_team'),
-                                'market_type': market_type,
-                                'odds': odds,
-                                'confidence': base_prob,
-                                'worst_case_result': worst_case,
-                                'match_data': match
-                            })
-                            print(f"    ✅ Added prediction: {market_type} @ {odds:.3f} odds (confidence: {base_prob:.1%})")
-                
-                print(f"  📊 Generated {len(raw_predictions)} raw predictions from {matches_checked} matches")
+                    # SIMPLIFIED: Don't filter matches, just analyze them all
+                    for match in matches:
+                        matches_checked += 1
+                        try:
+                            home = match.get('home_team', 'Unknown')
+                            away = match.get('away_team', 'Unknown')
+                            print(f"  🔍 Processing match {matches_checked}/{len(matches)}: {home} vs {away}")
+                            sys.stdout.flush()
+                            
+                            # Get safe markets for this match
+                            markets = self.simulator.get_recommended_markets(match)
+                            print(f"    📋 Recommended markets ({len(markets)}): {markets}")
+                            sys.stdout.flush()
+                            
+                            if not markets:
+                                print(f"    ⚠️ No recommended markets for this match")
+                                sys.stdout.flush()
+                                # Use default safe market if none recommended
+                                markets = ['over_0.5_goals']
+                            
+                            # Generate predictions for each safe market
+                            for market_type in markets[:2]:  # Limit to top 2 markets per match
+                                try:
+                                    # Conservative fallback probability (96% = very safe)
+                                    base_prob = 0.96
+                                    worst_case = self.simulator.test_all_scenarios(match, market_type, base_prob)
+                                    odds = self._get_odds_for_market(match, market_type, base_prob)
+                                    
+                                    print(f"    💰 Market: {market_type}, Odds: {odds:.3f}, Target range: {self.filter.min_odds}-{self.filter.max_odds}")
+                                    sys.stdout.flush()
+                                    
+                                    # Only add if odds are in our target range
+                                    if self.filter.min_odds <= odds <= self.filter.max_odds:
+                                        raw_predictions.append({
+                                            'match_id': match.get('id'),
+                                            'home_team': home,
+                                            'away_team': away,
+                                            'market_type': market_type,
+                                            'odds': odds,
+                                            'confidence': base_prob,
+                                            'worst_case_result': worst_case,
+                                            'match_data': match
+                                        })
+                                        print(f"    ✅ Added prediction: {market_type} @ {odds:.3f} odds (confidence: {base_prob:.1%})")
+                                        sys.stdout.flush()
+                                    else:
+                                        print(f"    ⚠️ Odds {odds:.3f} outside target range {self.filter.min_odds}-{self.filter.max_odds}")
+                                        sys.stdout.flush()
+                                except Exception as pred_error:
+                                    import traceback
+                                    print(f"    ❌ Error generating prediction for {market_type}: {pred_error}")
+                                    print(f"       {traceback.format_exc()[:200]}")
+                                    sys.stdout.flush()
+                                    continue
+                        except Exception as match_error:
+                            import traceback
+                            print(f"  ❌ Error processing match {matches_checked}: {match_error}")
+                            print(f"     {traceback.format_exc()[:200]}")
+                            sys.stdout.flush()
+                            continue
+                    
+                    print(f"  📊 Generated {len(raw_predictions)} raw predictions from {matches_checked} matches")
+                    sys.stdout.flush()
+                except Exception as gen_error:
+                    import traceback
+                    print(f"  ❌ FATAL ERROR in generate_predictions: {gen_error}")
+                    print(f"     {traceback.format_exc()[:500]}")
+                    sys.stdout.flush()
+                    return {
+                        'combo_odds': None,
+                        'games_used': 0,
+                        'picks': [],
+                        'reason': f'Error generating predictions: {str(gen_error)}',
+                        'confidence': 0.0
+                    }
                 
                 # SIMPLIFIED: Don't over-filter, just use raw predictions directly
                 # The filter_predictions method was too strict and filtering everything out
