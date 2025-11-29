@@ -80,7 +80,17 @@ class OddsCombiner:
         for pick in filtered_picks:
             odds = pick.get('odds', 1.0)
             if self.min_odds <= odds <= self.max_odds:
-                safety = pick.get('worst_case_result', {}).get('safety_score', 0)
+                # Get safety_score, default to 0.9 (high) if not present
+                worst_case = pick.get('worst_case_result', {})
+                if isinstance(worst_case, dict):
+                    safety = worst_case.get('safety_score', 0.9)
+                else:
+                    safety = 0.9  # Default high safety for fallback predictions
+                
+                # If no safety score, use confidence as proxy
+                if safety == 0:
+                    safety = pick.get('confidence', 0.9)
+                
                 if safety > best_safety_score:
                     best_safety_score = safety
                     best_combo = {
@@ -99,11 +109,16 @@ class OddsCombiner:
             
             if self.min_odds <= combo_odds <= self.max_odds:
                 # Calculate combined safety (average)
-                safety_scores = [
-                    p.get('worst_case_result', {}).get('safety_score', 0) 
-                    for p in picks
-                ]
-                avg_safety = sum(safety_scores) / len(safety_scores)
+                safety_scores = []
+                for p in picks:
+                    worst_case = p.get('worst_case_result', {})
+                    if isinstance(worst_case, dict):
+                        safety = worst_case.get('safety_score', p.get('confidence', 0.9))
+                    else:
+                        safety = p.get('confidence', 0.9)
+                    safety_scores.append(safety if safety > 0 else 0.9)
+                
+                avg_safety = sum(safety_scores) / len(safety_scores) if safety_scores else 0.9
                 
                 if avg_safety > best_safety_score:
                     best_safety_score = avg_safety
@@ -124,11 +139,16 @@ class OddsCombiner:
                 combo_odds = self.calculate_combo_odds(picks)
                 
                 if self.min_odds <= combo_odds <= self.max_odds:
-                    safety_scores = [
-                        p.get('worst_case_result', {}).get('safety_score', 0) 
-                        for p in picks
-                    ]
-                    avg_safety = sum(safety_scores) / len(safety_scores)
+                    safety_scores = []
+                    for p in picks:
+                        worst_case = p.get('worst_case_result', {})
+                        if isinstance(worst_case, dict):
+                            safety = worst_case.get('safety_score', p.get('confidence', 0.9))
+                        else:
+                            safety = p.get('confidence', 0.9)
+                        safety_scores.append(safety if safety > 0 else 0.9)
+                    
+                    avg_safety = sum(safety_scores) / len(safety_scores) if safety_scores else 0.9
                     
                     if avg_safety > best_safety_score:
                         best_safety_score = avg_safety
