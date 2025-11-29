@@ -145,10 +145,19 @@ async def get_safe_picks_today(db: Session = Depends(get_db)):
             def generate_predictions(self, matches):
                 # Use simple fallback predictions
                 raw_predictions = []
+                matches_checked = 0
+                matches_filtered_out = 0
+                
                 for match in matches:
+                    matches_checked += 1
                     if not self.filter.filter_match(match):
+                        matches_filtered_out += 1
+                        print(f"  ⚠️ Match filtered out: {match.get('home_team')} vs {match.get('away_team')}")
                         continue
+                    
                     markets = self.simulator.get_recommended_markets(match)
+                    print(f"  ✅ Match passed filter: {match.get('home_team')} vs {match.get('away_team')}, markets: {markets}")
+                    
                     for market_type in markets:
                         # Conservative fallback probability
                         base_prob = 0.96  # 96% confidence for safe picks
@@ -166,16 +175,26 @@ async def get_safe_picks_today(db: Session = Depends(get_db)):
                                 'worst_case_result': worst_case,
                                 'match_data': match
                             })
+                            print(f"    ✅ Added prediction: {market_type} @ {odds} odds")
+                
+                print(f"  📊 Raw predictions generated: {len(raw_predictions)} from {matches_checked} matches ({matches_filtered_out} filtered out)")
                 
                 filtered = self.filter.filter_predictions(matches, raw_predictions)
+                print(f"  📊 After filter_predictions: {len(filtered)} predictions remaining")
+                
                 best_combo = self.combiner.find_best_combination(filtered, max_games=3)
                 if best_combo:
+                    print(f"  ✅ Found best combo: {best_combo.get('combo_odds', 'N/A')} odds")
                     return self.combiner.format_combo_response(best_combo)
+                
+                reason = f'No safe combination found. Raw predictions: {len(raw_predictions)}, After filtering: {len(filtered)}'
+                if matches_filtered_out > 0:
+                    reason += f', Matches filtered: {matches_filtered_out}/{matches_checked}'
                 return {
                     'combo_odds': None,
                     'games_used': 0,
                     'picks': [],
-                    'reason': 'No safe combination found in target odds range (1.02-1.05)',
+                    'reason': reason,
                     'confidence': 0.0
                 }
             
