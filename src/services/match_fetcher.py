@@ -662,28 +662,35 @@ class MatchFetcher:
     def _parse_broadage_fixture(self, fixture_data: Dict) -> Optional[Dict]:
         """Parse Broadage API fixture to internal format"""
         try:
-            # Broadage API response format - adjust based on actual structure
-            # Try multiple possible field names
-            home_team = (
-                fixture_data.get("home_team", {}).get("name", "") if isinstance(fixture_data.get("home_team"), dict) else
-                fixture_data.get("homeTeam", "") or
-                fixture_data.get("home_team", "") or
-                fixture_data.get("home", "")
-            )
-            away_team = (
-                fixture_data.get("away_team", {}).get("name", "") if isinstance(fixture_data.get("away_team"), dict) else
-                fixture_data.get("awayTeam", "") or
-                fixture_data.get("away_team", "") or
-                fixture_data.get("away", "")
-            )
+            # Broadage API response format - teams come as dicts with 'name' field
+            # Extract team names properly
+            home_team_obj = fixture_data.get("homeTeam") or fixture_data.get("home_team") or fixture_data.get("home")
+            away_team_obj = fixture_data.get("awayTeam") or fixture_data.get("away_team") or fixture_data.get("away")
             
-            league_info = fixture_data.get("league", {}) if isinstance(fixture_data.get("league"), dict) else {}
-            league_name = (
-                league_info.get("name", "") or
-                fixture_data.get("leagueName", "") or
-                fixture_data.get("league", "")
-            )
-            league_id = league_info.get("id") or fixture_data.get("leagueId") or fixture_data.get("league_id")
+            # Extract name if it's a dict, otherwise use as string
+            if isinstance(home_team_obj, dict):
+                home_team = home_team_obj.get("name", "") or home_team_obj.get("shortName", "") or home_team_obj.get("mediumName", "")
+            else:
+                home_team = str(home_team_obj) if home_team_obj else ""
+            
+            if isinstance(away_team_obj, dict):
+                away_team = away_team_obj.get("name", "") or away_team_obj.get("shortName", "") or away_team_obj.get("mediumName", "")
+            else:
+                away_team = str(away_team_obj) if away_team_obj else ""
+            
+            # Ensure we have team names
+            if not home_team or not away_team:
+                print(f"⚠️ Missing team names in fixture: home={home_team_obj}, away={away_team_obj}")
+                return None
+            
+            # Extract league info - could be dict or string
+            league_info = fixture_data.get("league") or fixture_data.get("tournament")
+            if isinstance(league_info, dict):
+                league_name = league_info.get("name", "") or league_info.get("shortName", "")
+                league_id = league_info.get("id")
+            else:
+                league_name = str(league_info) if league_info else ""
+                league_id = fixture_data.get("leagueId") or fixture_data.get("league_id") or fixture_data.get("tournamentId")
             
             # Parse date - try multiple formats
             date_str = (
