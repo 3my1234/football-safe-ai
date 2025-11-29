@@ -214,55 +214,118 @@ async def get_safe_picks_today(db: Session = Depends(get_db)):
         print(f"✅ Processing {len(matches)} matches for safe picks")
         
         # Save matches to database
-        for match_data in matches:
-            db_match = db.query(Match).filter(
-                Match.match_id == match_data.get('id')
-            ).first()
+        try:
+            for match_data in matches:
+                match_id_str = str(match_data.get('id', ''))
+                if not match_id_str:
+                    print(f"⚠️ Skipping match with missing ID: {match_data}")
+                    continue
+                
+                # Ensure required fields exist
+                home_team = match_data.get('home_team', 'Unknown')
+                away_team = match_data.get('away_team', 'Unknown')
+                league = match_data.get('league', 'Unknown League')
+                match_date = match_data.get('match_date')
+                
+                # Validate required fields
+                if not all([home_team, away_team, league, match_date]):
+                    print(f"⚠️ Skipping match {match_id_str}: Missing required fields")
+                    print(f"   home_team: {home_team}, away_team: {away_team}, league: {league}, date: {match_date}")
+                    continue
+                
+                # Ensure match_date is a datetime object
+                if isinstance(match_date, str):
+                    try:
+                        match_date = datetime.fromisoformat(match_date.replace('Z', '+00:00'))
+                    except:
+                        print(f"⚠️ Could not parse date for match {match_id_str}: {match_date}")
+                        continue
+                
+                db_match = db.query(Match).filter(
+                    Match.match_id == match_id_str
+                ).first()
+                
+                if not db_match:
+                    try:
+                        db_match = Match(
+                            match_id=match_id_str,
+                            home_team=home_team,
+                            away_team=away_team,
+                            league=league,
+                            league_tier=match_data.get('league_tier'),
+                            match_date=match_date,
+                            home_odds=match_data.get('home_odds'),
+                            draw_odds=match_data.get('draw_odds'),
+                            away_odds=match_data.get('away_odds'),
+                            home_form=match_data.get('home_form'),
+                            away_form=match_data.get('away_form'),
+                            home_xg=match_data.get('home_xg'),
+                            away_xg=match_data.get('away_xg'),
+                            home_position=match_data.get('home_position'),
+                            away_position=match_data.get('away_position'),
+                            table_gap=match_data.get('table_gap'),
+                            pressure_index=match_data.get('pressure_index'),
+                            is_derby=match_data.get('is_derby', False),
+                            is_must_win=match_data.get('is_must_win', False),
+                            fixture_congestion=match_data.get('fixture_congestion', 7),
+                            status="pending"
+                        )
+                        db.add(db_match)
+                    except Exception as db_error:
+                        import traceback
+                        print(f"❌ Error creating Match record for {match_id_str}: {db_error}")
+                        print(f"   Traceback: {traceback.format_exc()[:500]}")
+                        print(f"   Match data: {match_data}")
+                        continue
             
-            if not db_match:
-                db_match = Match(
-                    match_id=match_data.get('id'),
-                    home_team=match_data.get('home_team'),
-                    away_team=match_data.get('away_team'),
-                    league=match_data.get('league'),
-                    league_tier=match_data.get('league_tier'),
-                    match_date=match_data.get('match_date'),
-                    home_odds=match_data.get('home_odds'),
-                    draw_odds=match_data.get('draw_odds'),
-                    away_odds=match_data.get('away_odds'),
-                    home_form=match_data.get('home_form'),
-                    away_form=match_data.get('away_form'),
-                    home_xg=match_data.get('home_xg'),
-                    away_xg=match_data.get('away_xg'),
-                    home_position=match_data.get('home_position'),
-                    away_position=match_data.get('away_position'),
-                    table_gap=match_data.get('table_gap'),
-                    pressure_index=match_data.get('pressure_index'),
-                    is_derby=match_data.get('is_derby', False),
-                    is_must_win=match_data.get('is_must_win', False),
-                    fixture_congestion=match_data.get('fixture_congestion', 7),
-                    status="pending"
-                )
-                db.add(db_match)
-        
-        db.commit()
+            db.commit()
+            print(f"✅ Saved {len(matches)} matches to database")
+        except Exception as db_error:
+            import traceback
+            db.rollback()
+            print(f"❌ Database error saving matches: {db_error}")
+            print(f"   Traceback: {traceback.format_exc()[:500]}")
+            raise HTTPException(status_code=500, detail=f"Database error: {str(db_error)}")
         
         # Generate predictions (works with or without ML model)
         result = service.generate_predictions(matches)
         
         # Save to database
         if result.get('combo_odds'):
-            combo = DailyCombo(
-                date=datetime.now().date(),
-                combo_odds=result['combo_odds'],
-                games_used=result['games_used'],
-                picks=[pick for pick in result['picks']],
-                total_confidence=result['confidence'],
-                admin_approved=False,
-                published=False
-            )
-            db.add(combo)
-            db.commit()
+            try:
+                # Check if combo for today already exists
+                today_date = datetime.now().date()
+                existing_combo = db.query(DailyCombo).filter(
+                    DailyCombo.date == today_date
+                ).first()
+                
+                if existing_combo:
+                    # Update existing combo
+                    existing_combo.combo_odds = result['combo_odds']
+                    existing_combo.games_used = result['games_used']
+                    existing_combo.picks = [pick for pick in result['picks']]
+                    existing_combo.total_confidence = result['confidence']
+                else:
+                    # Create new combo
+                    combo = DailyCombo(
+                        date=today_date,
+                        combo_odds=result['combo_odds'],
+                        games_used=result['games_used'],
+                        picks=[pick for pick in result['picks']],
+                        total_confidence=result['confidence'],
+                        admin_approved=False,
+                        published=False
+                    )
+                    db.add(combo)
+                
+                db.commit()
+                print(f"✅ Saved daily combo to database")
+            except Exception as combo_error:
+                import traceback
+                db.rollback()
+                print(f"⚠️ Error saving combo to database (non-critical): {combo_error}")
+                print(f"   Traceback: {traceback.format_exc()[:300]}")
+                # Don't fail the request if combo save fails
         
         # Convert to response model
         picks = [
@@ -328,6 +391,52 @@ async def check_date():
         "calculated_season": season_year,
         "timestamp": now.isoformat(),
         "note": "If date is wrong, check server timezone/date settings"
+    }
+
+
+@app.get("/test-broadage")
+async def test_broadage_api():
+    """Test Broadage API connection directly - shows actual error responses"""
+    import requests
+    import os
+    
+    base_url = os.getenv("BROADAGE_API_URL", "https://s0-sports-data-api.broadage.com")
+    api_key = os.getenv("BROADAGE_API_KEY", "")
+    today = datetime.now().strftime("%Y-%m-%d")
+    
+    results = []
+    
+    # Test the endpoint that returns 401
+    endpoint = f"{base_url}/soccer/match/list"
+    
+    # Try with languageId as header (as per docs)
+    headers = {
+        "Ocp-Apim-Subscription-Key": api_key,
+        "Accept": "application/json",
+        "languageId": "1"
+    }
+    params = {"date": today}
+    
+    try:
+        response = requests.get(endpoint, headers=headers, params=params, timeout=15)
+        results.append({
+            "endpoint": endpoint,
+            "status_code": response.status_code,
+            "headers_sent": headers,
+            "params_sent": params,
+            "response_body": response.text[:1000] if response.text else "No body",
+            "response_headers": dict(response.headers)
+        })
+    except Exception as e:
+        results.append({
+            "endpoint": endpoint,
+            "error": str(e)
+        })
+    
+    return {
+        "test_results": results,
+        "api_key_preview": api_key[:10] + "..." if api_key else "NOT SET",
+        "base_url": base_url
     }
 
 
