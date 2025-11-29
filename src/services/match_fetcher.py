@@ -695,10 +695,21 @@ class MatchFetcher:
             
             try:
                 if date_str:
-                    match_date = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
+                    # Try multiple date formats
+                    if 'T' in str(date_str) or 'Z' in str(date_str):
+                        # ISO format: "2025-11-28T19:00:00Z" or "2025-11-28T19:00:00+00:00"
+                        match_date = datetime.fromisoformat(str(date_str).replace('Z', '+00:00'))
+                    elif '/' in str(date_str):
+                        # DD/MM/YYYY format: "28/11/2025 19:00:00"
+                        date_part = str(date_str).split()[0] if ' ' in str(date_str) else str(date_str)
+                        match_date = datetime.strptime(date_part, "%d/%m/%Y")
+                    else:
+                        # Try standard format
+                        match_date = datetime.fromisoformat(str(date_str))
                 else:
                     match_date = datetime.now()
-            except:
+            except Exception as date_error:
+                print(f"⚠️ Could not parse date '{date_str}': {date_error}, using current time")
                 match_date = datetime.now()
             
             # Get odds - try multiple formats
