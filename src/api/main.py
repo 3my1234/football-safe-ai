@@ -139,8 +139,8 @@ async def get_safe_picks_today(db: Session = Depends(get_db)):
         class FallbackPredictionService:
             def __init__(self):
                 self.simulator = WorstCaseSimulator()
-                self.filter = SafeOddsFilter(min_odds=1.03, max_odds=1.05)
-                self.combiner = OddsCombiner(min_odds=1.03, max_odds=1.05)
+                self.filter = SafeOddsFilter(min_odds=1.02, max_odds=1.05)  # Include 1.02 for very safe picks
+                self.combiner = OddsCombiner(min_odds=1.02, max_odds=1.05)
             
             def generate_predictions(self, matches):
                 # Use simple fallback predictions
@@ -154,7 +154,8 @@ async def get_safe_picks_today(db: Session = Depends(get_db)):
                         base_prob = 0.96  # 96% confidence for safe picks
                         worst_case = self.simulator.test_all_scenarios(match, market_type, base_prob)
                         odds = self._get_odds_for_market(match, market_type, base_prob)
-                        if 1.03 <= odds <= 1.05:
+                        # Include 1.02-1.05 range (very safe odds)
+                        if 1.02 <= odds <= 1.05:
                             raw_predictions.append({
                                 'match_id': match.get('id'),
                                 'home_team': match.get('home_team'),
@@ -174,7 +175,7 @@ async def get_safe_picks_today(db: Session = Depends(get_db)):
                     'combo_odds': None,
                     'games_used': 0,
                     'picks': [],
-                    'reason': 'No safe combination found in target odds range (1.03-1.05)',
+                    'reason': 'No safe combination found in target odds range (1.02-1.05)',
                     'confidence': 0.0
                 }
             
