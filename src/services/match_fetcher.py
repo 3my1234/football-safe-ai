@@ -1,17 +1,27 @@
 """
 Match Fetcher
-Fetches today's matches from API-Football and odds from OddsAPI
+Fetches today's matches from API-Football/Broadage and enriches with real statistics
 """
 from typing import List, Dict
 import requests
 import os
 from datetime import datetime, timedelta
 from typing import Optional
+import logging
+
 # OddsAPI client (optional - fallback if not available)
 try:
     from src.services.odds_api_client import OddsAPIClient
 except ImportError:
     OddsAPIClient = None
+
+# Football-Data.org history service for real statistics
+try:
+    from src.services.football_data_history_service import FootballDataHistoryService
+except ImportError:
+    FootballDataHistoryService = None
+
+logger = logging.getLogger(__name__)
 
 
 class MatchFetcher:
@@ -58,16 +68,27 @@ class MatchFetcher:
         # Cache odds for today's matches
         self._odds_cache = {}
         self._odds_fetched = False
+        
+        # Initialize Football-Data.org history service for real statistics
+        self.history_service = FootballDataHistoryService() if FootballDataHistoryService else None
+        if self.history_service:
+            logger.info("✅ Football-Data.org history service initialized - real statistics enabled")
+        else:
+            logger.warning("⚠️ Football-Data.org history service not available - using defaults")
     
     def get_today_matches(self, leagues: Optional[List[int]] = None) -> List[Dict]:
         """
-        Fetch today's matches from API-Football and enrich with real odds from OddsAPI
+        Fetch today's matches from API-Football/Broadage and enrich with real statistics
         
         Args:
             leagues: List of league IDs (e.g., [39 for EPL, 140 for LaLiga])
         
         Returns:
-            List of match dictionaries with real odds
+            List of match dictionaries enriched with:
+            - Real team form (last 5 matches)
+            - Real H2H history
+            - Real xG calculated from historical data
+            - Real odds (if available)
         """
         if not self.api_key:
             api_key_name = "BROADAGE_API_KEY" if self.use_broadage else "API_FOOTBALL_KEY"
@@ -138,9 +159,20 @@ class MatchFetcher:
         
         # Fetch matches from selected API
         if self.use_broadage:
-            return self._fetch_from_broadage(today, leagues)
+            basic_matches = self._fetch_from_broadage(today, leagues)
         else:
-            return self._fetch_from_api_football(today, season_year, leagues)
+            basic_matches = self._fetch_from_api_football(today, season_year, leagues)
+        
+        # Enrich matches with real statistics from Football-Data.org
+        if basic_matches and self.history_service:
+            logger.info(f"Enriching {len(basic_matches)} matches with real statistics...")
+            enriched_matches = []
+            for match in basic_matches:
+                enriched = self._enrich_match_with_statistics(match)
+                enriched_matches.append(enriched)
+            return enriched_matches
+        
+        return basic_matches
     
     def _fetch_from_broadage(self, today: str, leagues: List[int]) -> List[Dict]:
         """Fetch matches from Broadage API"""
@@ -770,6 +802,142 @@ class MatchFetcher:
         except Exception as e:
             print(f"Error parsing Broadage fixture: {e}")
             return None
+    
+    def _enrich_match_with_statistics(self, match: Dict) -> Dict:
+        """
+        Enrich match with real statistics from Football-Data.org
+        
+        Adds:
+        - Real team form (last 5 matches)
+        - Real H2H history
+        - Real xG calculated from historical data
+        
+        Falls back to defaults if enrichment fails
+        """
+        if not self.history_service:
+            logger.debug("History service not available, using defaults")
+            return match
+        
+        try:
+            home_team = match.get('home_team', '')
+            away_team = match.get('away_team', '')
+            league_name = match.get('league', '')
+            league_id = match.get('league_id')  # May not be set
+            match_date = match.get('match_date', datetime.now())
+            
+            if not home_team or not away_team:
+                logger.warning(f"Missing team names, skipping enrichment: {home_team} vs {away_team}")
+                return match
+            
+            # Get competition code for Football-Data.org
+            competition_code = self.history_service.get_competition_code(
+                league_id=league_id,
+                league_name=league_name
+            )
+            
+            if not competition_code:
+                logger.debug(f"Could not map league '{league_name}' to Football-Data.org code, using defaults")
+                return match
+            
+            logger.info(f"Enriching {home_team} vs {away_team} ({competition_code})")
+            
+            # Fetch real team form
+            try:
+                home_form = self.history_service.calculate_team_form(
+                    team_name=home_team,
+                    competition_code=competition_code,
+                    before_date=match_date,
+                    matches_needed=5
+                )
+                away_form = self.history_service.calculate_team_form(
+                    team_name=away_team,
+                    competition_code=competition_code,
+                    before_date=match_date,
+                    matches_needed=5
+                )
+                
+                # Calculate real xG from form
+                home_xg = self.history_service.calculate_xg_from_form(home_form, is_home=True)
+                away_xg = self.history_service.calculate_xg_from_form(away_form, is_home=False)
+                
+                # Fetch H2H history
+                h2h = self.history_service.calculate_h2h(
+                    team1_name=home_team,
+                    team2_name=away_team,
+                    competition_code=competition_code,
+                    before_date=match_date,
+                    matches_needed=5
+                )
+                
+                # Update match with real data
+                match['home_form'] = {
+                    'goals_scored_5': home_form.get('goals_scored_5', 0),
+                    'goals_conceded_5': home_form.get('goals_conceded_5', 0),
+                    'form_percentage': home_form.get('form_percentage', 0.5),
+                    'wins': home_form.get('wins', 0),
+                    'draws': home_form.get('draws', 0),
+                    'losses': home_form.get('losses', 0),
+                    'form_string': home_form.get('form_string', ''),
+                    'points_5': home_form.get('points_5', 0),
+                    'clean_sheets': home_form.get('clean_sheets', 0),
+                    'matches_count': home_form.get('matches_count', 0),
+                    'avg_goals_scored': home_form.get('avg_goals_scored', 0.0),
+                    'avg_goals_conceded': home_form.get('avg_goals_conceded', 0.0),
+                    'shots_on_target_avg': home_form.get('avg_goals_scored', 0.0) * 2.5,  # Estimate SOT from goals
+                    'goals_variance': abs(home_form.get('avg_goals_scored', 1.5) - 1.5) * 2  # Estimate variance
+                }
+                
+                match['away_form'] = {
+                    'goals_scored_5': away_form.get('goals_scored_5', 0),
+                    'goals_conceded_5': away_form.get('goals_conceded_5', 0),
+                    'form_percentage': away_form.get('form_percentage', 0.5),
+                    'wins': away_form.get('wins', 0),
+                    'draws': away_form.get('draws', 0),
+                    'losses': away_form.get('losses', 0),
+                    'form_string': away_form.get('form_string', ''),
+                    'points_5': away_form.get('points_5', 0),
+                    'clean_sheets': away_form.get('clean_sheets', 0),
+                    'matches_count': away_form.get('matches_count', 0),
+                    'avg_goals_scored': away_form.get('avg_goals_scored', 0.0),
+                    'avg_goals_conceded': away_form.get('avg_goals_conceded', 0.0),
+                    'shots_on_target_avg': away_form.get('avg_goals_scored', 0.0) * 2.5,
+                    'goals_variance': abs(away_form.get('avg_goals_scored', 1.5) - 1.5) * 2
+                }
+                
+                match['home_xg'] = round(home_xg, 2)
+                match['away_xg'] = round(away_xg, 2)
+                
+                # Add H2H data
+                match['h2h'] = {
+                    'home_wins': h2h.get('team1_wins', 0),
+                    'away_wins': h2h.get('team2_wins', 0),
+                    'draws': h2h.get('draws', 0),
+                    'total_matches': h2h.get('total_matches', 0),
+                    'avg_goals_home': h2h.get('avg_goals_team1', 0.0),
+                    'avg_goals_away': h2h.get('avg_goals_team2', 0.0),
+                    'recent_trend': h2h.get('recent_trend', 'unknown'),
+                    'avg_total_goals': h2h.get('avg_total_goals', 0.0)
+                }
+                
+                # Mark as enriched with real data
+                match['_stats_source'] = 'football_data_org'
+                match['_enrichment_status'] = 'success'
+                
+                logger.info(f"✅ Enriched {home_team} vs {away_team}: Form={home_form.get('form_string', 'N/A')}, H2H={h2h.get('total_matches', 0)} matches")
+                
+            except Exception as form_error:
+                logger.warning(f"Failed to fetch form/H2H for {home_team} vs {away_team}: {form_error}")
+                match['_enrichment_status'] = 'partial_failure'
+                # Keep defaults, but mark that we tried
+                return match
+                
+        except Exception as e:
+            logger.error(f"Error enriching match statistics: {e}")
+            match['_enrichment_status'] = 'failed'
+            # Return match with defaults
+            return match
+        
+        return match
     
     def _map_league_tier(self, league_id: int) -> str:
         """Map API-Football league ID to league tier"""

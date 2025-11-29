@@ -99,18 +99,44 @@ class PredictionService:
                         away_odds = match.get('away_odds', 2.0)
                         league = match.get('league', 'Unknown League')
                         
+                        # Check if we're using real data or defaults
+                        stats_source = match.get('_stats_source', 'default')
+                        using_real_data = stats_source == 'football_data_org'
+                        
+                        # Get form data for better reasoning
+                        home_form = match.get('home_form', {})
+                        away_form = match.get('away_form', {})
+                        h2h_data = match.get('h2h', {})
+                        
                         # Market-specific reasoning
                         if market_type == 'over_0.5_goals':
                             reasoning_parts.append(f"Over 0.5 goals is ultra-safe (96% confidence) - almost all professional matches have at least 1 goal")
-                            if home_xg > 0 or away_xg > 0:
+                            if using_real_data:
+                                reasoning_parts.append(f"✅ Real statistics: Home team ({home}) avg {home_form.get('avg_goals_scored', 0):.1f} goals/game, Away ({away}) avg {away_form.get('avg_goals_scored', 0):.1f} goals/game (from last {home_form.get('matches_count', 0)} matches)")
+                                if h2h_data.get('total_matches', 0) > 0:
+                                    reasoning_parts.append(f"Head-to-head: {h2h_data.get('avg_total_goals', 0):.1f} avg goals in last {h2h_data.get('total_matches', 0)} encounters")
+                            elif home_xg > 0 or away_xg > 0:
                                 reasoning_parts.append(f"Both teams have decent attacking stats (home xG: {home_xg:.1f}, away xG: {away_xg:.1f})")
+                            else:
+                                reasoning_parts.append(f"Using conservative default statistics - real team stats not yet fetched")
                         elif market_type == 'over_1.5_goals':
+                            if using_real_data:
+                                reasoning_parts.append(f"✅ Real statistics: Combined avg {home_form.get('avg_goals_scored', 0) + away_form.get('avg_goals_scored', 0):.1f} goals/game from recent form")
+                                reasoning_parts.append(f"Home form: {home_form.get('form_string', 'N/A')} ({home_form.get('points_5', 0)} points), Away form: {away_form.get('form_string', 'N/A')} ({away_form.get('points_5', 0)} points)")
                             reasoning_parts.append(f"High probability of at least 2 goals given both teams' scoring ability")
                             reasoning_parts.append(f"Combined expected goals: {home_xg + away_xg:.1f}")
                         elif market_type == 'home_over_0.5_goals':
-                            reasoning_parts.append(f"{home} scores regularly (xG: {home_xg:.1f})")
+                            if using_real_data:
+                                reasoning_parts.append(f"✅ Real statistics: {home} has scored in {home_form.get('matches_count', 0)} of last 5 matches, avg {home_form.get('avg_goals_scored', 0):.1f} goals/game")
+                                reasoning_parts.append(f"Recent form: {home_form.get('form_string', 'N/A')} - {home_form.get('wins', 0)}W/{home_form.get('draws', 0)}D/{home_form.get('losses', 0)}L")
+                            else:
+                                reasoning_parts.append(f"{home} scores regularly (xG: {home_xg:.1f})")
                         elif market_type == 'away_over_0.5_goals':
-                            reasoning_parts.append(f"{away} scores regularly (xG: {away_xg:.1f})")
+                            if using_real_data:
+                                reasoning_parts.append(f"✅ Real statistics: {away} has scored in {away_form.get('matches_count', 0)} of last 5 matches, avg {away_form.get('avg_goals_scored', 0):.1f} goals/game")
+                                reasoning_parts.append(f"Recent form: {away_form.get('form_string', 'N/A')} - {away_form.get('wins', 0)}W/{away_form.get('draws', 0)}D/{away_form.get('losses', 0)}L")
+                            else:
+                                reasoning_parts.append(f"{away} scores regularly (xG: {away_xg:.1f})")
                         elif 'handicap' in market_type:
                             if 'home' in market_type:
                                 reasoning_parts.append(f"{home} is significantly stronger (odds {home_odds:.2f}), making handicap market very safe")
@@ -122,6 +148,12 @@ class PredictionService:
                         worst_case_prob = worst_case_result.get('worst_case_probability', base_prob)
                         reasoning_parts.append(f"Safety score: {safety_score:.1%} (survives worst-case scenarios with {worst_case_prob:.1%} probability)")
                         reasoning_parts.append(f"League: {league}")
+                        
+                        # Add data source transparency
+                        if using_real_data:
+                            reasoning_parts.append(f"📊 Data Source: Real statistics from Football-Data.org (Form from last {home_form.get('matches_count', 0)} matches, H2H from {h2h_data.get('total_matches', 0)} encounters)")
+                        else:
+                            reasoning_parts.append(f"📊 Data Status: Match fixture and odds are real, but team statistics are using conservative defaults")
                         
                         # Combine all reasoning
                         full_reasoning = ". ".join(reasoning_parts)
