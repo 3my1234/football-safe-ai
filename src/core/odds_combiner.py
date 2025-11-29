@@ -10,7 +10,8 @@ from itertools import combinations
 class OddsCombiner:
     """Combines picks to achieve target odds range"""
     
-    def __init__(self, min_odds: float = 1.03, max_odds: float = 1.10):
+    def __init__(self, min_odds: float = 1.02, max_odds: float = 1.10):
+        # Accept wider range - admin will verify actual odds during vetting
         self.min_odds = min_odds
         self.max_odds = max_odds
     
@@ -80,10 +81,12 @@ class OddsCombiner:
         single_pick_candidates = []
         
         # Try 1-game combo (safest)
+        # Accept all picks regardless of odds - admin will verify during vetting
         for pick in filtered_picks:
             odds = pick.get('odds', 1.0)
             single_pick_candidates.append(odds)
-            if self.min_odds <= odds <= self.max_odds:
+            # Don't filter by odds - focus on safety
+            if True:  # Accept all - admin verifies odds
                 # Get safety_score, default to 0.9 (high) if not present
                 worst_case = pick.get('worst_case_result', {})
                 if isinstance(worst_case, dict):
@@ -114,7 +117,8 @@ class OddsCombiner:
             picks = list(combo)
             combo_odds = self.calculate_combo_odds(picks)
             
-            if self.min_odds <= combo_odds <= self.max_odds:
+            # Accept if combo odds are reasonable (admin verifies actual odds)
+            if combo_odds <= 2.0:  # Allow up to 2.0 for combos
                 # Calculate combined safety (average)
                 safety_scores = []
                 for p in picks:
@@ -145,7 +149,8 @@ class OddsCombiner:
                 picks = list(combo)
                 combo_odds = self.calculate_combo_odds(picks)
                 
-                if self.min_odds <= combo_odds <= self.max_odds:
+                # Accept if combo odds are reasonable
+                if combo_odds <= 3.0:  # Allow up to 3.0 for 3-game combos
                     safety_scores = []
                     for p in picks:
                         worst_case = p.get('worst_case_result', {})

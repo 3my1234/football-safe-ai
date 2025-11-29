@@ -71,8 +71,8 @@ class PredictionService:
                 if not recommended_markets:
                     recommended_markets = ['over_0.5_goals']  # Default safe market
                 
-                # Predict probability for each market (limit to top 2 if no model)
-                for market_type in recommended_markets[:2 if use_simplified else None]:
+                # Process all recommended markets (don't limit - let AI reason about all safe options)
+                for market_type in recommended_markets:
                     try:
                         if self.predictor.model:
                             base_prob = self.predictor.predict(match, market_type)
@@ -85,29 +85,24 @@ class PredictionService:
                             match, market_type, base_prob
                         )
                         
-                        # Get odds - prefer real odds from match data, fallback to estimated
+                        # Get estimated odds (admin will verify/update during vetting)
+                        # Don't filter by odds - focus on market safety reasoning
                         odds = self._get_odds_for_market(match, market_type, base_prob)
                         
-                        print(f"    💰 Market: {market_type}, Odds: {odds:.3f}, Confidence: {base_prob:.1%}, Target: {self.combiner.min_odds}-{self.combiner.max_odds}")
+                        # Add ALL recommended markets - admin will verify odds later
+                        raw_predictions.append({
+                            'match_id': match.get('id'),
+                            'home_team': home,
+                            'away_team': away,
+                            'market_type': market_type,
+                            'odds': odds,  # Estimated - admin will update during vetting
+                            'confidence': base_prob,
+                            'worst_case_result': worst_case_result,
+                            'match_data': match,
+                            'reasoning': worst_case_result.get('safety_score', 0.9)  # Include safety reasoning
+                        })
+                        print(f"    ✅ Added prediction: {market_type} (safety_score: {worst_case_result.get('safety_score', 0.9):.2f}, estimated_odds: {odds:.3f})")
                         sys.stdout.flush()
-                        
-                        # Only add if odds are in target range
-                        if self.combiner.min_odds <= odds <= self.combiner.max_odds:
-                            raw_predictions.append({
-                                'match_id': match.get('id'),
-                                'home_team': home,
-                                'away_team': away,
-                                'market_type': market_type,
-                                'odds': odds,
-                                'confidence': base_prob,
-                                'worst_case_result': worst_case_result,
-                                'match_data': match
-                            })
-                            print(f"    ✅ Added prediction: {market_type} @ {odds:.3f} odds")
-                            sys.stdout.flush()
-                        else:
-                            print(f"    ⚠️ Odds {odds:.3f} outside target range")
-                            sys.stdout.flush()
                     except Exception as market_error:
                         import traceback
                         print(f"    ❌ Error processing market {market_type}: {market_error}")
@@ -124,16 +119,18 @@ class PredictionService:
         print(f"  📊 Generated {len(raw_predictions)} raw predictions")
         sys.stdout.flush()
         
-        # Step 2: If model not loaded, skip filtering (use raw predictions directly)
-        if use_simplified:
-            filtered = raw_predictions
-            print(f"  📊 Using simplified logic: skipping filter_predictions")
-        else:
-            filtered = self.filter.filter_predictions(matches, raw_predictions)
-            print(f"  📊 After filter_predictions: {len(filtered)} predictions remaining")
+        # Step 2: Sort by safety score (highest first) - pick safest markets
+        # Don't filter by odds - focus on safety reasoning
+        filtered = sorted(
+            raw_predictions,
+            key=lambda p: p.get('worst_case_result', {}).get('safety_score', 0.9) if isinstance(p.get('worst_case_result'), dict) else 0.9,
+            reverse=True
+        )
+        print(f"  📊 Sorted {len(filtered)} predictions by safety score")
         sys.stdout.flush()
         
-        # Step 3: Find best combination
+        # Step 3: Select top safest markets (1-3 games for combination)
+        # Prioritize highest safety scores
         best_combo = self.combiner.find_best_combination(filtered, max_games=3)
         
         # Step 4: Format response

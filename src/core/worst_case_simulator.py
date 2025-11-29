@@ -162,26 +162,74 @@ class WorstCaseSimulator:
     
     def get_recommended_markets(self, match_data: Dict) -> List[str]:
         """
-        Get recommended safe markets for a match
+        Get recommended safe markets for a match based on AI reasoning
         Prioritizes markets that survive worst-case scenarios
+        
+        Returns markets like:
+        - handicap_2_home: Home team with 2-goal handicap (very safe if home is strong)
+        - handicap_2_away: Away team with 2-goal handicap (very safe if away is strong)
+        - over_0.5_goals: At least 1 goal scored (ultra-safe)
+        - over_1.5_goals: At least 2 goals scored (safe)
+        - under_3.5_goals: Maximum 3 goals (safe for low-scoring matches)
         """
         recommended = []
+        home_team = match_data.get('home_team', '')
+        away_team = match_data.get('away_team', '')
         
-        # Always include ultra-safe markets
-        if match_data.get('home_xg', 0) > 0.8:
-            recommended.append("home_over_0.5_goals")
+        # Get team strength indicators
+        home_xg = match_data.get('home_xg', 1.5)
+        away_xg = match_data.get('away_xg', 1.5)
+        home_odds = match_data.get('home_odds', 2.0)
+        away_odds = match_data.get('away_odds', 2.0)
+        home_form = match_data.get('home_form', {})
+        away_form = match_data.get('away_form', {})
         
-        if match_data.get('away_xg', 0) > 0.8:
-            recommended.append("away_over_0.5_goals")
+        # REASONING: Handicap markets (safest when one team is clearly stronger)
+        # If home team is much stronger (lower odds = stronger), handicap favors home
+        if home_odds < 1.5 and (home_odds < away_odds - 0.3):
+            recommended.append("handicap_2_home")
+            print(f"    💡 Reasoning: {home_team} is strong (odds {home_odds:.2f}), handicap_2_home is very safe")
         
-        # Over 0.5 goals is almost always safe
+        # If away team is much stronger
+        if away_odds < 1.5 and (away_odds < home_odds - 0.3):
+            recommended.append("handicap_2_away")
+            print(f"    💡 Reasoning: {away_team} is strong (odds {away_odds:.2f}), handicap_2_away is very safe")
+        
+        # REASONING: Over goals markets (safe when teams score regularly)
+        # Always include over 0.5 goals (ultra-safe - almost always happens)
         recommended.append("over_0.5_goals")
         
-        # Corners if teams are attacking
-        home_sot = match_data.get('home_form', {}).get('shots_on_target_avg', 4)
-        away_sot = match_data.get('away_form', {}).get('shots_on_target_avg', 4)
+        # Over 1.5 goals if both teams have decent xG
+        if home_xg > 1.0 and away_xg > 1.0:
+            recommended.append("over_1.5_goals")
+            print(f"    💡 Reasoning: Both teams score regularly (home_xg={home_xg:.1f}, away_xg={away_xg:.1f})")
+        
+        # Over 2.5 goals if high-scoring teams
+        if home_xg + away_xg > 3.0:
+            recommended.append("over_2.5_goals")
+            print(f"    💡 Reasoning: High-scoring match expected (combined xG={home_xg + away_xg:.1f})")
+        
+        # REASONING: Under goals markets (safe for defensive/low-scoring matches)
+        # Under 3.5 goals if low-scoring teams
+        if home_xg + away_xg < 2.5:
+            recommended.append("under_3.5_goals")
+            print(f"    💡 Reasoning: Low-scoring match expected (combined xG={home_xg + away_xg:.1f})")
+        
+        # REASONING: Team-specific over goals (safe when team scores regularly)
+        if home_xg > 1.0:
+            recommended.append("home_over_0.5_goals")
+            print(f"    💡 Reasoning: {home_team} scores regularly (xG={home_xg:.1f})")
+        
+        if away_xg > 1.0:
+            recommended.append("away_over_0.5_goals")
+            print(f"    💡 Reasoning: {away_team} scores regularly (xG={away_xg:.1f})")
+        
+        # REASONING: Corners (safe when attacking teams)
+        home_sot = home_form.get('shots_on_target_avg', 4)
+        away_sot = away_form.get('shots_on_target_avg', 4)
         if home_sot + away_sot > 8:
             recommended.append("over_6.5_corners")
+            print(f"    💡 Reasoning: Both teams attack frequently (combined SOT={home_sot + away_sot:.1f})")
         
         return list(set(recommended))  # Remove duplicates
 
