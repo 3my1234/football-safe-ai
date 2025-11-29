@@ -71,14 +71,18 @@ class OddsCombiner:
             }
         """
         if not filtered_picks:
+            print(f"  ⚠️ OddsCombiner: No filtered picks provided (empty list)")
             return None
         
+        print(f"  🔍 OddsCombiner: Finding best combo from {len(filtered_picks)} filtered picks (target: {self.min_odds}-{self.max_odds})")
         best_combo = None
         best_safety_score = 0.0
+        single_pick_candidates = []
         
         # Try 1-game combo (safest)
         for pick in filtered_picks:
             odds = pick.get('odds', 1.0)
+            single_pick_candidates.append(odds)
             if self.min_odds <= odds <= self.max_odds:
                 # Get safety_score, default to 0.9 (high) if not present
                 worst_case = pick.get('worst_case_result', {})
@@ -101,6 +105,9 @@ class OddsCombiner:
                         'safety_score': safety,
                         'reason': f"Single pick: {pick.get('market_type')} at {odds}x odds"
                     }
+        
+        if single_pick_candidates and not best_combo:
+            print(f"  ⚠️ OddsCombiner: {len(single_pick_candidates)} single picks checked, odds range: {min(single_pick_candidates):.3f}-{max(single_pick_candidates):.3f}, target: {self.min_odds}-{self.max_odds}")
         
         # Try 2-game combo
         for combo in combinations(filtered_picks, 2):
@@ -171,7 +178,7 @@ class OddsCombiner:
                 'combo_odds': None,
                 'games_used': 0,
                 'picks': [],
-                'reason': 'No safe combination found in target odds range',
+                'reason': f'No safe combination found in target odds range ({self.min_odds}-{self.max_odds})',
                 'confidence': 0.0
             }
         

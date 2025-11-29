@@ -187,9 +187,16 @@ async def get_safe_picks_today(db: Session = Depends(get_db)):
                     print(f"  ✅ Found best combo: {best_combo.get('combo_odds', 'N/A')} odds")
                     return self.combiner.format_combo_response(best_combo)
                 
-                reason = f'No safe combination found. Raw predictions: {len(raw_predictions)}, After filtering: {len(filtered)}'
+                reason = f'No safe combination found in target odds range ({self.combiner.min_odds}-{self.combiner.max_odds}). Raw predictions: {len(raw_predictions)}, After filtering: {len(filtered)}'
                 if matches_filtered_out > 0:
                     reason += f', Matches filtered: {matches_filtered_out}/{matches_checked}'
+                if filtered:
+                    # Log the odds of filtered predictions to see why they don't match
+                    filtered_odds = [f.get('odds', 'N/A') for f in filtered[:5]]
+                    reason += f', Filtered prediction odds: {filtered_odds}'
+                print(f"  ❌ {reason}")
+                import sys
+                sys.stdout.flush()
                 return {
                     'combo_odds': None,
                     'games_used': 0,
@@ -308,7 +315,20 @@ async def get_safe_picks_today(db: Session = Depends(get_db)):
             raise HTTPException(status_code=500, detail=f"Database error: {str(db_error)}")
         
         # Generate predictions (works with or without ML model)
-        result = service.generate_predictions(matches)
+        print(f"🔍 Calling generate_predictions with {len(matches)} matches...")
+        import sys
+        sys.stdout.flush()  # Force flush to ensure logs appear
+        
+        try:
+            result = service.generate_predictions(matches)
+            print(f"🔍 generate_predictions returned: combo_odds={result.get('combo_odds')}, games_used={result.get('games_used')}, picks_count={len(result.get('picks', []))}")
+            sys.stdout.flush()
+        except Exception as pred_error:
+            import traceback
+            print(f"❌ Error in generate_predictions: {pred_error}")
+            print(f"   Traceback: {traceback.format_exc()[:1000]}")
+            sys.stdout.flush()
+            raise HTTPException(status_code=500, detail=f"Error generating predictions: {str(pred_error)}")
         
         # Save to database
         if result.get('combo_odds'):
