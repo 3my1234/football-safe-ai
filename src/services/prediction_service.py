@@ -89,6 +89,43 @@ class PredictionService:
                         # Don't filter by odds - focus on market safety reasoning
                         odds = self._get_odds_for_market(match, market_type, base_prob)
                         
+                        # Generate reasoning for why this market was recommended
+                        reasoning_parts = []
+                        
+                        # Get match context for reasoning
+                        home_xg = match.get('home_xg', 0)
+                        away_xg = match.get('away_xg', 0)
+                        home_odds = match.get('home_odds', 2.0)
+                        away_odds = match.get('away_odds', 2.0)
+                        league = match.get('league', 'Unknown League')
+                        
+                        # Market-specific reasoning
+                        if market_type == 'over_0.5_goals':
+                            reasoning_parts.append(f"Over 0.5 goals is ultra-safe (96% confidence) - almost all professional matches have at least 1 goal")
+                            if home_xg > 0 or away_xg > 0:
+                                reasoning_parts.append(f"Both teams have decent attacking stats (home xG: {home_xg:.1f}, away xG: {away_xg:.1f})")
+                        elif market_type == 'over_1.5_goals':
+                            reasoning_parts.append(f"High probability of at least 2 goals given both teams' scoring ability")
+                            reasoning_parts.append(f"Combined expected goals: {home_xg + away_xg:.1f}")
+                        elif market_type == 'home_over_0.5_goals':
+                            reasoning_parts.append(f"{home} scores regularly (xG: {home_xg:.1f})")
+                        elif market_type == 'away_over_0.5_goals':
+                            reasoning_parts.append(f"{away} scores regularly (xG: {away_xg:.1f})")
+                        elif 'handicap' in market_type:
+                            if 'home' in market_type:
+                                reasoning_parts.append(f"{home} is significantly stronger (odds {home_odds:.2f}), making handicap market very safe")
+                            else:
+                                reasoning_parts.append(f"{away} is significantly stronger (odds {away_odds:.2f}), making handicap market very safe")
+                        
+                        # Safety reasoning
+                        safety_score = worst_case_result.get('safety_score', 0.9)
+                        worst_case_prob = worst_case_result.get('worst_case_probability', base_prob)
+                        reasoning_parts.append(f"Safety score: {safety_score:.1%} (survives worst-case scenarios with {worst_case_prob:.1%} probability)")
+                        reasoning_parts.append(f"League: {league}")
+                        
+                        # Combine all reasoning
+                        full_reasoning = ". ".join(reasoning_parts)
+                        
                         # Add ALL recommended markets - admin will verify odds later
                         raw_predictions.append({
                             'match_id': match.get('id'),
@@ -99,7 +136,7 @@ class PredictionService:
                             'confidence': base_prob,
                             'worst_case_result': worst_case_result,
                             'match_data': match,
-                            'reasoning': worst_case_result.get('safety_score', 0.9)  # Include safety reasoning
+                            'reasoning': full_reasoning  # Store full reasoning text
                         })
                         print(f"    ✅ Added prediction: {market_type} (safety_score: {worst_case_result.get('safety_score', 0.9):.2f}, estimated_odds: {odds:.3f})")
                         sys.stdout.flush()

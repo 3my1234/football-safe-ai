@@ -106,7 +106,7 @@ class OddsCombiner:
                         'total_confidence': pick.get('confidence', 0),
                         'games_used': 1,
                         'safety_score': safety,
-                        'reason': f"Single pick: {pick.get('market_type')} at {odds}x odds"
+                        'reason': f"Single pick: {pick.get('market_type')} at {odds}x odds. {pick.get('reasoning', 'High confidence pick with strong safety metrics.')}"
                     }
         
         if single_pick_candidates and not best_combo:
@@ -197,7 +197,8 @@ class OddsCombiner:
                     'odds': pick.get('odds', 1.0),
                     'confidence': pick.get('confidence', 0),
                     'worstCaseSafe': pick.get('worst_case_result', {}).get('survives_all', False),
-                    'safety_score': pick.get('worst_case_result', {}).get('safety_score', 0)
+                    'safety_score': pick.get('worst_case_result', {}).get('safety_score', 0),
+                    'reasoning': pick.get('reasoning', 'High confidence pick with strong safety metrics.')
                 }
                 for pick in combo['picks']
             ],
