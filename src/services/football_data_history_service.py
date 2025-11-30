@@ -330,7 +330,28 @@ class FootballDataHistoryService:
         
         # Filter matches for this team and sort by date (newest first)
         team_matches = []
+        
+        # Get team ID first - if this fails, we can't find form
         team_id = self.get_team_id_from_matches(team_name, competition_code)
+        if not team_id:
+            logger.warning(f"⚠️ Could not find team ID for '{team_name}' in {competition_code}")
+            logger.warning(f"   This means team name matching failed - team might not be in Football-Data.org database")
+            logger.warning(f"   Searched {len(all_matches)} matches from {competition_code}")
+            return {
+                'goals_scored_5': 0,
+                'goals_conceded_5': 0,
+                'wins': 0,
+                'draws': 0,
+                'losses': 0,
+                'form_percentage': 0.0,
+                'form_string': '',
+                'points_5': 0,
+                'clean_sheets': 0,
+                'matches_count': 0,
+                'avg_goals_scored': 0.0,
+                'avg_goals_conceded': 0.0,
+                'source': 'team_not_found'
+            }
         
         for match in all_matches:
             match_date_str = match.get("utcDate", "")
