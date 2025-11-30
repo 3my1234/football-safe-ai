@@ -223,6 +223,7 @@ class MatchFetcher:
         primary_lang_id = str(self.language_id)
         fallback_language_ids = [str(i) for i in range(2, 12) if i != self.language_id]
         
+        # Try with date parameter first, then without date (to get more matches)
         auth_configs = [
             {
                 "name": f"languageId={primary_lang_id} (configured/default) + date DD/MM/YYYY",
@@ -232,11 +233,20 @@ class MatchFetcher:
                     "languageId": primary_lang_id
                 },
                 "params": {"date": today_dd_mm_yyyy}
+            },
+            {
+                "name": f"languageId={primary_lang_id} (configured/default) - NO DATE (get all)",
+                "headers": {
+                    "Ocp-Apim-Subscription-Key": self.api_key.strip(),
+                    "Accept": "application/json",
+                    "languageId": primary_lang_id
+                },
+                "params": {}  # No date - might return more matches, we'll filter client-side
             }
         ]
         
         # Add fallback language IDs only if primary fails
-        for lang_id in fallback_language_ids[:5]:  # Limit to 5 fallbacks
+        for lang_id in fallback_language_ids[:3]:  # Limit to 3 fallbacks
             auth_configs.append({
                 "name": f"languageId={lang_id} (fallback) + date DD/MM/YYYY",
                 "headers": {
@@ -287,10 +297,12 @@ class MatchFetcher:
                             )
                         
                         # Filter by date if matches returned
+                        # NOTE: Broadage might already filter by date parameter, so we're getting limited results
+                        # If we want more matches, we might need to remove date filter or fetch multiple days
                         if matches_data:
                             filtered_matches = []
                             for match in matches_data:
-                                match_date = match.get("date") or match.get("matchDate") or match.get("startDate")
+                                match_date = match.get("date") or match.get("matchDate") or match.get("startDate") or match.get("utcDate")
                                 if match_date:
                                     # Parse date format and check if it's today
                                     try:
@@ -304,14 +316,36 @@ class MatchFetcher:
                                         
                                         if parsed_date.date() == datetime.strptime(today, "%Y-%m-%d").date():
                                             filtered_matches.append(match)
-                                    except:
+                                    except Exception as e:
                                         # If date parsing fails, include the match (might be today)
+                                        # This helps get more matches if date field is missing or different format
                                         filtered_matches.append(match)
-                            matches_data = filtered_matches if filtered_matches else matches_data
+                            # Only filter if we found matches with valid dates
+                            # Otherwise keep all matches (date filtering might have removed all)
+                            if filtered_matches:
+                                matches_data = filtered_matches
+                            # If no filtered matches but we have data, it might be that dates don't match format
+                            # In that case, keep all matches (they might all be for today)
+                            print(f"  📊 After date filtering: {len(matches_data)} matches")
                         
                         print(f"  ✅ Found {len(matches_data)} matches from Broadage for {today}")
                         print(f"  🎉 Working languageId: {config['headers'].get('languageId')}")
-                        break  # Found working endpoint/config combination
+                        print(f"  📊 Config used: {config['name']}")
+                        
+                        # Store best result
+                        if not best_matches or len(matches_data) > len(best_matches):
+                            best_matches = matches_data.copy()
+                            best_config_used = config
+                            best_endpoint_used = endpoint
+                        
+                        # If we got good number of matches, use this
+                        if len(matches_data) >= 10:
+                            print(f"  ✅ Got {len(matches_data)} matches - using this config!")
+                            break  # Got enough matches, use this config
+                        else:
+                            print(f"  ⚠️ Only {len(matches_data)} matches - will try other configs for more...")
+                            # Continue to try other configs to get more matches
+                            continue
                         
                     elif response.status_code == 401:
                         error_body = ""
@@ -392,8 +426,18 @@ class MatchFetcher:
                     print(f"     Traceback: {traceback.format_exc()[:200]}")
                     continue
             
-            if matches_data:
-                break  # Found working endpoint, stop trying others
+            # If we found matches with this endpoint, check if we should continue
+            if matches_data and len(matches_data) >= 10:
+                break  # Got enough matches, stop trying
+        
+        # Use best matches if we found any
+        if best_matches:
+            matches_data = best_matches
+            print(f"\n📊 Using best result: {len(matches_data)} matches from {best_endpoint_used}")
+            print(f"   Config: {best_config_used['name'] if best_config_used else 'N/A'}")
+        elif matches_data:
+            # Fallback to last successful matches_data
+            print(f"\n📊 Using last result: {len(matches_data)} matches")
         
         # Parse matches if found
         if matches_data:

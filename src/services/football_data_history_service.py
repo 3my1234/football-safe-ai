@@ -221,7 +221,24 @@ class FootballDataHistoryService:
             if team_name_lower in team_api_name or team_api_name in team_name_lower:
                 return team
         
+        # Try fuzzy matching (remove special characters, extra words)
+        # Normalize team names: remove "FC", "SV", numbers, special chars for comparison
+        def normalize_name(name: str) -> str:
+            # Remove common prefixes/suffixes
+            name = name.lower().replace("fc", "").replace("sv", "").replace("sg", "")
+            # Remove extra whitespace and special chars except spaces
+            name = "".join(c if c.isalnum() or c.isspace() else "" for c in name)
+            return " ".join(name.split())  # Normalize spaces
+        
+        normalized_search = normalize_name(team_name_lower)
+        for team in team_list:
+            team_api_normalized = normalize_name(team.get("name", ""))
+            if normalized_search in team_api_normalized or team_api_normalized in normalized_search:
+                logger.info(f"Matched '{team_name}' to '{team.get('name')}' using normalized matching")
+                return team
+        
         # Manual mapping for common differences
+        # Include German team name variations
         manual_mappings = {
             "tottenham": "tottenham hotspur",
             "spurs": "tottenham hotspur",
@@ -230,6 +247,18 @@ class FootballDataHistoryService:
             "arsenal": "arsenal fc",
             "chelsea": "chelsea fc",
             "liverpool": "liverpool fc",
+            # German teams (2. Bundesliga, 3. Liga)
+            "preussen munster": "preußen münster",
+            "preussen münster": "preußen münster",
+            "preussen": "preußen münster",
+            "arminia bielefeld": "arminia bielefeld",
+            "dynamo dresden": "sg dynamo dresden",
+            "fortuna dusseldorf": "fortuna düsseldorf",
+            "fortuna düsseldorf": "fortuna düsseldorf",
+            "sv darmstadt": "sv darmstadt 98",
+            "darmstadt 98": "sv darmstadt 98",
+            "elversberg": "sv elversberg",
+            "sv elversberg": "sv elversberg",
         }
         
         for key, value in manual_mappings.items():
