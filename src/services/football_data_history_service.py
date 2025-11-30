@@ -62,10 +62,14 @@ class FootballDataHistoryService:
         "primera division": "PD",
         "la liga": "PD",
         "bundesliga": "BL1",
+        "2. bundesliga": "BL2",
+        "2 bundesliga": "BL2",
+        "zweite bundesliga": "BL2",
         "serie a": "SA",
         "ligue 1": "FL1",
         "eredivisie": "DED",
         "championship": "ELC",
+        "3. liga": "BL3",  # May not exist in Football-Data.org
     }
     
     def __init__(self):

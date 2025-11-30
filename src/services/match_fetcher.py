@@ -197,11 +197,12 @@ class MatchFetcher:
         # Try exact endpoint paths from Broadage docs (case-sensitive)
         # Based on error: /soccer/match/list exists but returns "Language is invalid"
         # Try the exact paths from documentation
+        # Priority: Scheduled first (to get all matches for today), then Live, then All
         possible_endpoints = [
-            f"{self.base_url}/soccer/MatchList/All",  # Exact case from docs
-            f"{self.base_url}/soccer/MatchList/Scheduled",  # For scheduled matches
-            f"{self.base_url}/soccer/MatchList/Live",  # Live matches
+            f"{self.base_url}/soccer/MatchList/Scheduled",  # For scheduled matches (PRIORITY - gets all today's matches)
             f"{self.base_url}/soccer/match/list",  # Lowercase version (exists but language issue)
+            f"{self.base_url}/soccer/MatchList/All",  # Exact case from docs
+            f"{self.base_url}/soccer/MatchList/Live",  # Live matches (only currently playing)
         ]
         
         # Try date parameter variations (Broadage might use different date formats)
@@ -836,8 +837,11 @@ class MatchFetcher:
             )
             
             if not competition_code:
-                logger.debug(f"Could not map league '{league_name}' to Football-Data.org code, using defaults")
+                logger.warning(f"⚠️ Could not map league '{league_name}' (ID: {league_id}) to Football-Data.org code, using defaults")
+                logger.warning(f"   Available mappings: {list(self.history_service.LEAGUE_MAPPING.keys())}")
                 return match
+            
+            logger.info(f"✅ Mapped league '{league_name}' (ID: {league_id}) to competition code: {competition_code}")
             
             logger.info(f"Enriching {home_team} vs {away_team} ({competition_code})")
             
